@@ -49,7 +49,7 @@ Anything running on the event loop can also call `console.write(data, stream="st
 |---|---|
 | `Console(id=None, style=None, *, max_lines=2000, encoding="utf-8", errors="replace", follow=True, styles=None, placeholder=None, on_change=None, **style_properties)` | Always read-only and selectable; monospace unless a font family is given. |
 | `write(data, *, stream="stdout")` | Append bytes or text on a named stream. Each stream has its own decoder and escape parser; all streams share one cursor and scrollback. |
-| `attach(source, *, stream="stdout")` | Read a source until it ends: an `asyncio.StreamReader`, an async iterable of bytes or text, a file-like object with `fileno()`, or a file descriptor. Returns an `Attachment`. A regular file is read to its current end; on Android, descriptors are read on a helper thread so end-of-file arrives. |
+| `attach(source, *, stream="stdout")` | Read a source until it ends: an `asyncio.StreamReader`, an async iterable of bytes or text, a file-like object with `fileno()`, or a file descriptor. Returns an `Attachment`. A regular file is read to its current end; on Android, descriptors are read on a helper thread so end-of-file arrives. On macOS and iOS the descriptor is switched to non-blocking for good; the widget never closes a descriptor it was given. |
 | `clear()` | Empty the scrollback and the display at once. |
 | `flush()` | Apply pending output to the display now instead of after the 50 ms interval. |
 | `value` | The scrollback text. Assigning clears, then writes the text on `stdout`. |
@@ -71,11 +71,11 @@ Anything running on the event loop can also call `console.write(data, stream="st
 | CSI, OSC, and other escape sequences | consumed; rendering SGR colours is a planned extension |
 | other control characters | dropped |
 
-A line reaching 4096 characters is split, a sequence of 256 characters without its terminator is abandoned, and the oldest lines drop past `max_lines`. Long lines wrap at the view's width. Each stream's decoder and escape parser keep their state across writes and attachments, so a sequence left open by one source affects the next text on that stream.
+A line reaching 4096 characters is split, a sequence of 256 characters without its terminator is abandoned, and the oldest lines drop past `max_lines`. Long lines wrap at the view's width. Each stream's decoder and escape parser keep their state across writes, so a character or sequence may span two chunks. When an attachment ends and no other live attachment shares its stream, that stream's decoder and parser are reset, so a source that dies mid-sequence cannot swallow the next source's text.
 
 ## Threads
 
-`write` and every other method run on the event loop thread. From another thread, use `loop.call_soon_threadsafe(console.write, data)`. Sources given to `attach` are pumped by the loop itself.
+`write` and every other method run on the event loop thread. From another thread, use `loop.call_soon_threadsafe(console.write, data)`. Sources given to `attach` are delivered to `write` on the loop; on Android a helper thread does the reading.
 
 ## Demo
 
