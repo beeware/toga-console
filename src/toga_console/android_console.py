@@ -1,8 +1,23 @@
+import weakref
+
 from android.graphics import Typeface
-from android.text import SpannableString, Spanned, TextUtils
+from android.text import Selection, SpannableString, Spanned, TextUtils
 from android.text.style import ForegroundColorSpan, StyleSpan
+from java import dynamic_proxy
+from java.lang import Runnable
 from toga_android.colors import native_color
+from toga_android.widgets.base import suppress_reference_error
 from toga_android.widgets.multilinetextinput import MultilineTextInput
+
+
+class TogaBottomScroller(dynamic_proxy(Runnable)):
+    def __init__(self, impl):
+        super().__init__()
+        self.impl = weakref.proxy(impl)
+
+    def run(self):
+        with suppress_reference_error():
+            self.impl._scroll_to_bottom_now()
 
 
 class Console(MultilineTextInput):
@@ -18,6 +33,7 @@ class Console(MultilineTextInput):
         native.setKeyListener(None)
         native.setTextIsSelectable(True)
         native.setCursorVisible(False)
+        self.bottom_scroller = TogaBottomScroller(self)
 
     def set_readonly(self, readonly):
         # Always read-only. The base would make the view unfocusable, which also
@@ -29,10 +45,29 @@ class Console(MultilineTextInput):
         # on_change once per flush.
         pass
 
+    def scroll_to_bottom(self):
+        # Scroll the view, never the selection: the base moves the cursor to the
+        # end, and the view would then follow it (see _drop_caret). Posted, so it
+        # runs after the next layout pass.
+        self.native.post(self.bottom_scroller)
+
+    def _scroll_to_bottom_now(self):
+        native = self.native
+        layout = native.getLayout()
+        if layout is None:
+            return
+        bottom = (
+            layout.getLineTop(layout.getLineCount())
+            + native.getPaddingTop()
+            + native.getPaddingBottom()
+        )
+        native.scrollTo(0, max(0, bottom - native.getHeight()))
+
     # Console backend contract
 
     def replace_tail(self, runs):
         editable = self.native.getText()
+        self._drop_caret(editable)
         start = TextUtils.lastIndexOf(editable, "\n") + 1
         editable.delete(start, editable.length())
         for text, style in runs:
@@ -40,6 +75,7 @@ class Console(MultilineTextInput):
 
     def trim_lines(self, count):
         editable = self.native.getText()
+        self._drop_caret(editable)
         end = 0
         for _ in range(count):
             index = TextUtils.indexOf(editable, "\n", end)
@@ -53,7 +89,15 @@ class Console(MultilineTextInput):
     def clear(self):
         self.native.getText().clear()
 
-    # Styles
+    # Selection and styles
+
+    def _drop_caret(self, editable):
+        # TextView scrolls the selection into view after every edit, and output
+        # appended at a caret carries it along, so a caret would pull the view to
+        # itself on every flush, follow or not. A selected range is the user's.
+        start = Selection.getSelectionStart(editable)
+        if start >= 0 and start == Selection.getSelectionEnd(editable):
+            Selection.removeSelection(editable)
 
     def _spannable(self, text, style):
         spannable = SpannableString(text)

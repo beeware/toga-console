@@ -1,10 +1,12 @@
-"""The pumps behind ``Console.attach``: one task or reader hook per source."""
+"""The pumps behind ``Console.attach``: one task, reader hook, or thread per source."""
 
 from __future__ import annotations
 
 import asyncio
 import os
 import stat
+import sys
+import threading
 from collections.abc import Callable
 
 READ_CHUNK = 4096
@@ -69,6 +71,8 @@ def start_pump(source, sink: Sink, stream: str) -> Attachment:
             # A selector cannot see the end of a regular file: kqueue stops reporting
             # it readable there, and epoll refuses it. Read it to its end in a task.
             attachment._task = loop.create_task(_run(_pump_file, fd, sink, attachment))
+        elif hasattr(sys, "getandroidapilevel"):
+            _pump_fd_thread(loop, fd, sink, attachment)
         else:
             _pump_fd(loop, fd, sink, attachment)
         return attachment
@@ -138,3 +142,39 @@ def _pump_fd(loop, fd: int, sink: Sink, attachment: Attachment) -> None:
 
     attachment._cleanup = lambda: loop.remove_reader(fd)
     loop.add_reader(fd, on_readable)
+
+
+def _pump_fd_thread(loop, fd: int, sink: Sink, attachment: Attachment) -> None:
+    """Read a descriptor with blocking reads on a daemon thread, for Android.
+
+    Toga's Android selector passes on only read and write readiness, and Android
+    reports a pipe whose writer has closed as a hang-up alone, so a reader added with
+    ``add_reader`` never sees the EOF. A blocking read returns it. The descriptor's
+    blocking mode is left as it is. Once the attachment is done nothing more is
+    delivered, and the thread exits when its current read returns.
+    """
+
+    def deliver(chunk: bytes) -> None:
+        if attachment.done:
+            return
+        try:
+            sink(chunk)
+        except Exception as exc:
+            attachment._finish(exc)
+
+    def read() -> None:
+        while not attachment.done:
+            try:
+                chunk = os.read(fd, READ_CHUNK)
+            except OSError as exc:
+                if not attachment.done:
+                    loop.call_soon_threadsafe(attachment._finish, exc)
+                return
+            if attachment.done:
+                return
+            if not chunk:
+                loop.call_soon_threadsafe(attachment._finish)
+                return
+            loop.call_soon_threadsafe(deliver, chunk)
+
+    threading.Thread(target=read, daemon=True).start()

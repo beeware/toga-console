@@ -1,11 +1,12 @@
 """Console Demo: feeds the toga-console widget from a burst, a pipe, and a subprocess.
 
 The self-test runs at startup and from its button: it writes the burst directly,
-then streams the same bytes through an OS pipe, and compares the native view's
-text with the model's text and with the expected text. It then trims the console
-to seven lines and compares the native view's text with the model's text and
-with the last seven expected lines. The verdict is printed as ``SELFTEST OK`` or
-``SELFTEST FAIL`` so a log reader can check a backend without eyes on the screen.
+then streams the same bytes through an OS pipe until the pipe's attachment sees
+the end, and compares the native view's text with the model's text and with the
+expected text. It then trims the console to seven lines and compares the native
+view's text with the model's text and with the last seven expected lines. The
+verdict is printed as ``SELFTEST OK`` or ``SELFTEST FAIL`` so a log reader can
+check a backend without eyes on the screen.
 """
 
 import asyncio
@@ -110,6 +111,7 @@ class ConsoleDemo(toga.App):
         attachment = self.console.attach(read_end, stream="stderr")
         threading.Thread(target=feed, daemon=True).start()
         asyncio.get_running_loop().create_task(self._close_after(attachment, read_end))
+        return attachment
 
     async def _close_after(self, attachment, fd):
         try:
@@ -142,14 +144,16 @@ class ConsoleDemo(toga.App):
         self.console.clear()
         self.burst()
         await asyncio.sleep(0.2)
-        self.pipe()
+        attachment = self.pipe()
         for _ in range(100):
             await asyncio.sleep(0.05)
-            if self.console.value.count("accent line") >= 2:
+            if self.console.value.count("accent line") >= 2 and attachment.done:
                 break
         await asyncio.sleep(0.2)
         native, model = self.console._impl.get_value(), self.console.value
-        ok = native == model == EXPECTED * 2
+        # The pipe's end must reach its attachment, on Android too.
+        pipe_done = attachment.done
+        ok = native == model == EXPECTED * 2 and pipe_done
         # Twelve lines down to seven: the trim runs through the newline that precedes
         # the combining-character line.
         self.console.max_lines = 7
@@ -162,7 +166,8 @@ class ConsoleDemo(toga.App):
         self.result.text = f"Self-test {verdict}"
         print(
             f"SELFTEST {verdict} native={native!r} model={model!r} "
-            f"trimmed_native={trimmed_native!r} trimmed_model={trimmed_model!r}",
+            f"trimmed_native={trimmed_native!r} trimmed_model={trimmed_model!r} "
+            f"pipe_done={pipe_done}",
             flush=True,
         )
 
