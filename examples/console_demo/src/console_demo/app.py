@@ -3,9 +3,9 @@
 The self-test runs at startup and from its button: it writes the burst directly,
 then streams the same bytes through an OS pipe, and compares the native view's
 text with the model's text and with the expected text. It then trims the console
-to seven lines and compares the native view's text with the model's again. The
-verdict is printed as ``SELFTEST OK`` or ``SELFTEST FAIL`` so a log reader can
-check a backend without eyes on the screen.
+to seven lines and compares the native view's text with the model's text and
+with the last seven expected lines. The verdict is printed as ``SELFTEST OK`` or
+``SELFTEST FAIL`` so a log reader can check a backend without eyes on the screen.
 """
 
 import asyncio
@@ -43,6 +43,8 @@ EXPECTED = (
     "Split emoji: 🐍 done\n"
     "\u0301 accent line\n"
 )
+# The self-test's trim keeps the last seven of its twelve lines.
+TRIMMED = "\u0301 accent line\n" + EXPECTED
 CHILD_SCRIPT = (
     "import sys, time\n"
     "for i in range(3):\n"
@@ -155,7 +157,7 @@ class ConsoleDemo(toga.App):
         trimmed_native = self.console._impl.get_value()
         trimmed_model = self.console.value
         self.console.max_lines = DEFAULT_MAX_LINES
-        ok = ok and trimmed_native == trimmed_model
+        ok = ok and trimmed_native == trimmed_model == TRIMMED
         verdict = "OK" if ok else "FAIL"
         self.result.text = f"Self-test {verdict}"
         print(
