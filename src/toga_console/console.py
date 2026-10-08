@@ -179,6 +179,18 @@ class Console(toga.MultilineTextInput):
         """Stream name to style. A change applies to text written afterwards."""
         return self._styles
 
+    @property
+    def readonly(self) -> bool:
+        """A console is always read-only."""
+        return True
+
+    @readonly.setter
+    def readonly(self, value: object) -> None:
+        # toga-core's __init__ assigns True here, which makes the native view read-only.
+        if not value:
+            raise ValueError("a Console is always read-only")
+        self._impl.set_readonly(True)
+
     # Internals
 
     def _stream(self, name: str) -> Stream:
