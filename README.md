@@ -71,7 +71,7 @@ Anything running on the event loop can also call `console.write(data, stream="st
 | CSI, OSC, and other escape sequences | consumed; rendering SGR colours is a planned extension |
 | other control characters | dropped |
 
-A line longer than 4096 characters is split, a sequence of 256 bytes without its terminator is abandoned, and the oldest lines drop past `max_lines`. Long lines wrap at the view's width. Each stream's decoder and escape parser keep their state across writes and attachments, so a sequence left open by one source affects the next text on that stream.
+A line reaching 4096 characters is split, a sequence of 256 characters without its terminator is abandoned, and the oldest lines drop past `max_lines`. Long lines wrap at the view's width. Each stream's decoder and escape parser keep their state across writes and attachments, so a sequence left open by one source affects the next text on that stream.
 
 ## Threads
 
