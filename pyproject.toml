@@ -1,0 +1,70 @@
+[build-system]
+requires = ["setuptools >= 77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "toga-console"
+version = "0.1.0.dev0"
+description = "A Toga widget that behaves like a console, showing the output of any pipe-like source."
+readme = "README.md"
+requires-python = ">= 3.11"
+license = "BSD-3-Clause"
+license-files = ["LICENSE"]
+authors = [{name = "Kattni", email = "hello@kattni.com"}]
+keywords = ["gui", "widget", "toga", "console", "terminal", "subprocess"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Software Development :: User Interfaces",
+    "Topic :: Software Development :: Widget Sets",
+]
+dependencies = [
+    "toga-core >= 0.5.7",
+]
+
+[project.entry-points."toga_console.backend.toga_dummy"]
+Console = "toga_console.dummy_console:Console"
+
+[project.entry-points."toga_console.backend.toga_cocoa"]
+Console = "toga_console.cocoa_console:Console"
+
+[project.entry-points."toga_console.backend.toga_iOS"]
+Console = "toga_console.iOS_console:Console"
+
+[project.entry-points."toga_console.backend.toga_android"]
+Console = "toga_console.android_console:Console"
+
+[dependency-groups]
+test = [
+    "pytest >= 9",
+    "pytest-asyncio >= 1.4",
+    "toga-dummy >= 0.5.7",
+]
+dev = [
+    {include-group = "test"},
+    "briefcase >= 0.4.5",
+    "ruff",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "UP", "B", "ASYNC", "C4", "I"]
+# E501: the formatter wraps code; long strings and asserts stay readable.
+ignore = ["E501"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["toga_console"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+filterwarnings = ["error"]
+testpaths = ["tests"]
