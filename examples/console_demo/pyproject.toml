@@ -1,0 +1,49 @@
+[build-system]
+requires = ["briefcase"]
+
+[project]
+name = "console_demo"
+version = "0.0.1"
+
+[tool.briefcase]
+project_name = "Console Demo"
+bundle = "org.beeware.examples"
+version = "0.0.1"
+url = "https://beeware.org"
+license = "BSD-3-Clause"
+license-files = ["LICENSE"]
+author = "Kattni"
+author_email = "hello@kattni.com"
+description = "A demo of the toga-console widget."
+# macOS and iOS install the widget from this repository; Android installs it from a
+# built wheel (run `uv build` in packages/toga-console first), because Gradle rejects
+# a path requirement whose directory contains the Android build tree.
+requires = []
+
+[tool.briefcase.app.console_demo]
+formal_name = "Console Demo"
+sources = ["src/console_demo"]
+
+[tool.briefcase.app.console_demo.macOS]
+requires = [
+    "../..",
+    "toga-cocoa ~= 0.5.7",
+    "std-nslog >= 1.0.0",
+]
+
+[tool.briefcase.app.console_demo.iOS]
+requires = [
+    "../..",
+    "toga-iOS ~= 0.5.7",
+    "std-nslog >= 1.0.0",
+]
+
+[tool.briefcase.app.console_demo.android]
+requires = [
+    "../../dist/toga_console-0.1.0.dev0-py3-none-any.whl",
+    "toga-android ~= 0.5.7",
+]
+base_theme = "Theme.MaterialComponents.Light.DarkActionBar"
+build_gradle_dependencies = [
+    "com.google.android.material:material:1.12.0",
+]
