@@ -16,6 +16,7 @@ from toga.widgets.base import StyleT
 from toga.widgets.multilinetextinput import OnChangeHandler
 
 from .model import DEFAULT_MAX_LINES, PLAIN, Scrollback, Stream, Style
+from .sources import Attachment, start_pump
 
 FLUSH_INTERVAL = 0.05
 """Seconds between a write and the display update that shows it."""
@@ -139,6 +140,16 @@ class Console(toga.MultilineTextInput):
         if text:
             self._scrollback.put(text, self._styles.get(stream, PLAIN))
             self._schedule_flush()
+
+    def attach(self, source, *, stream: str = "stdout") -> Attachment:
+        """Read a source into the console until it ends.
+
+        ``source`` is an :class:`asyncio.StreamReader` (a subprocess pipe, for
+        example), an async iterable of bytes or text, a file-like object with
+        ``fileno()``, or a file descriptor. Returns the :class:`Attachment`, which
+        can cancel the source or be awaited for its end.
+        """
+        return start_pump(source, lambda data: self.write(data, stream=stream), stream)
 
     def clear(self) -> None:
         """Empty the scrollback and the display at once."""
