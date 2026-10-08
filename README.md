@@ -1,3 +1,100 @@
 # toga-console
 
-A Toga widget that behaves like a console. Documentation arrives with the package.
+A [Toga](https://toga.readthedocs.io) widget that behaves like a console. Feed it bytes or text from anywhere: a subprocess's stdout and stderr, an OS pipe, an asyncio stream, a serial link. It decodes incrementally, honours carriage returns and backspaces, strips terminal escape sequences, keeps a bounded scrollback, and follows the newest output. Native backends for macOS, iOS, and Android, plus the dummy backend for tests.
+
+## Install
+
+Not on PyPI yet. From a checkout of this repository:
+
+```
+pip install packages/toga-console
+```
+
+## Use
+
+```python
+import asyncio
+import sys
+
+import toga
+
+from toga_console import Console
+
+
+class Example(toga.App):
+    def startup(self):
+        self.console = Console(flex=1)
+        self.main_window = toga.MainWindow()
+        self.main_window.content = self.console
+        self.main_window.show()
+
+    async def on_running(self):
+        process = await asyncio.create_subprocess_exec(
+            sys.executable,
+            "-c",
+            "import sys; print('hello'); print('oops', file=sys.stderr)",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        self.console.attach(process.stdout)
+        self.console.attach(process.stderr, stream="stderr")  # red by default
+        await process.wait()
+```
+
+Anything running on the event loop can also call `console.write(data, stream="stdout")` directly, with bytes or text.
+
+## API
+
+| Member | Meaning |
+|---|---|
+| `Console(id=None, style=None, *, max_lines=2000, encoding="utf-8", errors="replace", follow=True, styles=None, placeholder=None, on_change=None, **style_properties)` | Always read-only and selectable; monospace unless a font family is given. |
+| `write(data, *, stream="stdout")` | Append bytes or text on a named stream. Each stream has its own decoder and escape parser; all streams share one cursor and scrollback. |
+| `attach(source, *, stream="stdout")` | Read a source until it ends: an `asyncio.StreamReader`, an async iterable of bytes or text, a file-like object with `fileno()`, or a file descriptor. Returns an `Attachment`. A regular file is read to its current end; on Android, descriptors are read on a helper thread so end-of-file arrives. |
+| `clear()` | Empty the scrollback and the display at once. |
+| `flush()` | Apply pending output to the display now instead of after the 50 ms interval. |
+| `value` | The scrollback text. Assigning clears, then writes the text on `stdout`. |
+| `max_lines` | Committed lines kept; assigning trims at once. |
+| `follow` | Scroll to the newest output after each update. |
+| `styles` | A dict from stream name to `Style`; by default `stderr` is red. A change applies to text written afterwards. |
+| `on_change` | Fires once per display update that changed what is shown. Use it to show a "new output" hint while the console is hidden. |
+| `Attachment` | `cancel()` stops the source; `await wait()` returns at its end or after cancel and raises the error the source raised; `done`, `error`, `stream`. |
+| `Style(color=None, bold=False, italic=False)` | `color` is any Toga colour value; `None` is the widget's own text colour. |
+
+## Behaviour
+
+| Input | Effect |
+|---|---|
+| `\n` | commits the line |
+| `\r` | moves to the start of the line; later text overwrites, so progress lines update in place |
+| `\b` | moves back one column |
+| `\t` | kept |
+| CSI, OSC, and other escape sequences | consumed; rendering SGR colours is a planned extension |
+| other control characters | dropped |
+
+A line longer than 4096 characters is split, a sequence of 256 bytes without its terminator is abandoned, and the oldest lines drop past `max_lines`. Long lines wrap at the view's width. Each stream's decoder and escape parser keep their state across writes and attachments, so a sequence left open by one source affects the next text on that stream.
+
+## Threads
+
+`write` and every other method run on the event loop thread. From another thread, use `loop.call_soon_threadsafe(console.write, data)`. Sources given to `attach` are pumped by the loop itself.
+
+## Demo
+
+`examples/console_demo` is a Briefcase app with a self-test that compares the native view's text with the model's. From that directory: `briefcase dev` on macOS, `briefcase run iOS` on the simulator, and for Android build the wheel first (`uv build` in the package directory) because Gradle rejects a path requirement whose directory contains the Android build tree, then `briefcase run android`.
+
+## Tests
+
+```
+pytest
+```
+
+runs on the dummy backend with warnings as errors. The native backends are checked by the demo's self-test on each platform.
+
+When developing inside the PyScribBLE repository, install the package editable into its venv from the repository root: `uv pip install -e packages/toga-console`.
+
+## A note on the interface name
+
+The widget looks its backends up under the Toga interface group `toga_console`. Toga currently warns about `toga_` interface names it does not know; the widget suppresses that one warning when it asks for its factory, and the block goes away once Toga has a way to register external widgets.
+
+## Licence
+
+BSD-3-Clause.
