@@ -11,6 +11,9 @@ requires-python = ">= 3.11"
 license = "BSD-3-Clause"
 license-files = ["LICENSE"]
 authors = [{name = "Kattni", email = "hello@kattni.com"}]
+# A coming Toga release recognises official external widgets by this entry; the
+# warning suppression in console.py stays until that release ships.
+maintainers = [{name = "BeeWare Team", email = "team@beeware.org"}]
 keywords = ["gui", "widget", "toga", "console", "terminal", "subprocess"]
 classifiers = [
     "Development Status :: 3 - Alpha",
