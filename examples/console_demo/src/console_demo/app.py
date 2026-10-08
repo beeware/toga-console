@@ -2,9 +2,10 @@
 
 The self-test runs at startup and from its button: it writes the burst directly,
 then streams the same bytes through an OS pipe, and compares the native view's
-text with the model's text and with the expected text. The verdict is printed as
-``SELFTEST OK`` or ``SELFTEST FAIL`` so a log reader can check a backend without
-eyes on the screen.
+text with the model's text and with the expected text. It then trims the console
+to seven lines and compares the native view's text with the model's again. The
+verdict is printed as ``SELFTEST OK`` or ``SELFTEST FAIL`` so a log reader can
+check a backend without eyes on the screen.
 """
 
 import asyncio
@@ -18,6 +19,7 @@ from toga.constants import COLUMN, ROW
 from toga.platform import current_platform
 
 from toga_console import Console
+from toga_console.model import DEFAULT_MAX_LINES
 
 BURST = [
     b"Hello from the burst\r\n",
@@ -145,9 +147,22 @@ class ConsoleDemo(toga.App):
                 break
         await asyncio.sleep(0.2)
         native, model = self.console._impl.get_value(), self.console.value
-        verdict = "OK" if native == model == EXPECTED * 2 else "FAIL"
+        ok = native == model == EXPECTED * 2
+        # Twelve lines down to seven: the trim runs through the newline that precedes
+        # the combining-character line.
+        self.console.max_lines = 7
+        await asyncio.sleep(0.2)
+        trimmed_native = self.console._impl.get_value()
+        trimmed_model = self.console.value
+        self.console.max_lines = DEFAULT_MAX_LINES
+        ok = ok and trimmed_native == trimmed_model
+        verdict = "OK" if ok else "FAIL"
         self.result.text = f"Self-test {verdict}"
-        print(f"SELFTEST {verdict} native={native!r} model={model!r}", flush=True)
+        print(
+            f"SELFTEST {verdict} native={native!r} model={model!r} "
+            f"trimmed_native={trimmed_native!r} trimmed_model={trimmed_model!r}",
+            flush=True,
+        )
 
 
 def main():
