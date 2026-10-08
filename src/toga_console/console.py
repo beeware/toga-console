@@ -146,8 +146,9 @@ class Console(toga.MultilineTextInput):
 
         ``source`` is an :class:`asyncio.StreamReader` (a subprocess pipe, for
         example), an async iterable of bytes or text, a file-like object with
-        ``fileno()``, or a file descriptor. Returns the :class:`Attachment`, which
-        can cancel the source or be awaited for its end.
+        ``fileno()``, or a file descriptor. A regular file is read to its current
+        end, not followed. Returns the :class:`Attachment`, which can cancel the
+        source or be awaited for its end.
         """
         return start_pump(source, lambda data: self.write(data, stream=stream), stream)
 

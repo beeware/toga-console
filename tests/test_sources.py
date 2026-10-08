@@ -72,6 +72,30 @@ async def test_file_object_source(app):
     assert console.value == "x"
 
 
+async def test_regular_file_source_ends_at_the_current_end(app, tmp_path):
+    # A selector cannot see the end of a regular file, so one is read in a task.
+    log = tmp_path / "log.txt"
+    log.write_bytes(b"line 1\nline 2\n")
+    console = Console()
+    with log.open("rb", buffering=0) as reader:
+        attachment = console.attach(reader)
+        await asyncio.wait_for(attachment.wait(), 2)
+    console.flush()
+    assert console.value == "line 1\nline 2\n"
+    assert attachment.done and attachment.error is None
+
+    # An empty file ends at once and adds nothing.
+    shown = console.value
+    empty = tmp_path / "empty.txt"
+    empty.write_bytes(b"")
+    with empty.open("rb", buffering=0) as reader:
+        attachment = console.attach(reader)
+        await asyncio.wait_for(attachment.wait(), 2)
+    console.flush()
+    assert console.value == shown
+    assert attachment.done and attachment.error is None
+
+
 async def test_a_real_subprocess_on_both_streams(app):
     script = (
         "import sys, time\n"
@@ -142,6 +166,18 @@ async def test_source_errors_are_kept_on_the_attachment(app):
     assert console.value == "before"
     assert isinstance(attachment.error, OSError)
     assert attachment.done
+
+
+async def test_a_failing_sink_ends_a_descriptor_attachment(app):
+    console = Console(errors="strict")
+    read_end, write_end = os.pipe()
+    attachment = console.attach(read_end)
+    os.write(write_end, b"\xff")
+    with pytest.raises(UnicodeDecodeError):
+        await asyncio.wait_for(attachment.wait(), 2)
+    assert asyncio.get_running_loop().remove_reader(read_end) is False
+    os.close(write_end)
+    os.close(read_end)
 
 
 async def test_clear_during_streaming_keeps_later_output(app):

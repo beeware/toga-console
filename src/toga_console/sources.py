@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import stat
 from collections.abc import Callable
 
 READ_CHUNK = 4096
@@ -52,8 +53,9 @@ def start_pump(source, sink: Sink, stream: str) -> Attachment:
     """Start reading ``source`` into ``sink`` on the running loop.
 
     ``source`` is an :class:`asyncio.StreamReader`, an async iterable of bytes or
-    text, an object with ``fileno()``, or a file descriptor. Anything else raises
-    ``TypeError``. Needs a running event loop.
+    text, an object with ``fileno()``, or a file descriptor. A regular file is read
+    to its current end; it is not followed. Anything else raises ``TypeError``.
+    Needs a running event loop.
     """
     loop = asyncio.get_running_loop()
     attachment = Attachment(stream)
@@ -63,7 +65,12 @@ def start_pump(source, sink: Sink, stream: str) -> Attachment:
         pump = _pump_async_iterable
     elif isinstance(source, int) or hasattr(source, "fileno"):
         fd = source if isinstance(source, int) else source.fileno()
-        _pump_fd(loop, fd, sink, attachment)
+        if stat.S_ISREG(os.fstat(fd).st_mode):
+            # A selector cannot see the end of a regular file: kqueue stops reporting
+            # it readable there, and epoll refuses it. Read it to its end in a task.
+            attachment._task = loop.create_task(_run(_pump_file, fd, sink, attachment))
+        else:
+            _pump_fd(loop, fd, sink, attachment)
         return attachment
     else:
         raise TypeError(
@@ -101,6 +108,15 @@ async def _pump_async_iterable(source, sink: Sink) -> None:
         sink(chunk)
 
 
+async def _pump_file(fd: int, sink: Sink) -> None:
+    while True:
+        chunk = os.read(fd, READ_CHUNK)
+        if not chunk:
+            return
+        sink(chunk)
+        await asyncio.sleep(0)  # let the loop run between the chunks of a large file
+
+
 def _pump_fd(loop, fd: int, sink: Sink, attachment: Attachment) -> None:
     os.set_blocking(fd, False)
 
@@ -115,7 +131,10 @@ def _pump_fd(loop, fd: int, sink: Sink, attachment: Attachment) -> None:
         if not chunk:
             attachment._finish()
             return
-        sink(chunk)
+        try:
+            sink(chunk)
+        except Exception as exc:
+            attachment._finish(exc)
 
     attachment._cleanup = lambda: loop.remove_reader(fd)
     loop.add_reader(fd, on_readable)
