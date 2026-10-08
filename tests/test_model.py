@@ -83,3 +83,144 @@ def test_streams_keep_their_own_parser_state():
     assert one.filter("\x1b[") == ""
     assert two.filter("plain") == "plain"
     assert one.filter("mdone") == "done"
+
+
+from toga_console.model import MAX_LINE_LENGTH, PLAIN, Scrollback  # noqa: E402
+
+RED = Style(color="red")
+
+
+def test_newline_commits_a_line():
+    scrollback = Scrollback(max_lines=10)
+    scrollback.put("hello\nwor", PLAIN)
+    assert scrollback.text == "hello\nwor"
+    assert len(scrollback.lines) == 1
+
+
+def test_carriage_return_overwrites_from_the_start_of_the_line():
+    scrollback = Scrollback(10)
+    scrollback.put("Progress: 10%\rProgress: 100%\n", PLAIN)
+    assert scrollback.text == "Progress: 100%\n"
+    scrollback.put("abcdef\rXY", PLAIN)
+    assert scrollback.text == "Progress: 100%\nXYcdef"
+
+
+def test_crlf_split_across_puts_is_one_line_break():
+    scrollback = Scrollback(10)
+    scrollback.put("one\r", PLAIN)
+    scrollback.put("\ntwo\r\n", PLAIN)
+    assert scrollback.text == "one\ntwo\n"
+
+
+def test_backspace_moves_back_one_column_but_not_past_the_start():
+    scrollback = Scrollback(10)
+    scrollback.put("abc\b\bX", PLAIN)
+    assert scrollback.text == "aXc"
+    scrollback.put("\b\b\b\b\bY", PLAIN)
+    assert scrollback.text == "YXc"
+
+
+def test_other_control_characters_are_dropped_and_tabs_kept():
+    scrollback = Scrollback(10)
+    scrollback.put("a\x00b\x07c\td\x7fe", PLAIN)
+    assert scrollback.text == "abc\tde"
+
+
+def test_a_line_at_the_length_limit_is_committed():
+    scrollback = Scrollback(10)
+    scrollback.put("x" * (MAX_LINE_LENGTH + 1), PLAIN)
+    assert len(scrollback.lines) == 1
+    assert scrollback.text == "x" * MAX_LINE_LENGTH + "\nx"
+
+
+def test_oldest_lines_drop_past_max_lines():
+    scrollback = Scrollback(2)
+    scrollback.put("1\n2\n3\n", PLAIN)
+    assert scrollback.text == "2\n3\n"
+    scrollback.max_lines = 1
+    assert scrollback.text == "3\n"
+
+
+def test_styles_form_runs_per_line():
+    scrollback = Scrollback(10)
+    scrollback.put("ab", PLAIN)
+    scrollback.put("cd", RED)
+    scrollback.put("e\n", RED)
+    assert scrollback.lines[0] == [("ab", PLAIN), ("cde", RED)]
+    scrollback.put("x", PLAIN)
+    scrollback.put("\rY", RED)
+    assert scrollback.current_runs() == [("Y", RED)]
+
+
+def test_text_ends_with_a_newline_only_after_a_newline():
+    scrollback = Scrollback(10)
+    scrollback.put("a\n", PLAIN)
+    assert scrollback.text == "a\n"
+    scrollback.put("b", PLAIN)
+    assert scrollback.text == "a\nb"
+
+
+def test_first_flush_replaces_the_tail_with_everything():
+    scrollback = Scrollback(10)
+    scrollback.put("a\nb", PLAIN)
+    flush = scrollback.take_flush()
+    assert (flush.clear, flush.trim, flush.runs) == (False, 0, [("a\nb", PLAIN)])
+    assert scrollback.take_flush() is None
+
+
+def test_flush_carries_the_old_tail_new_lines_and_the_new_tail():
+    scrollback = Scrollback(10)
+    scrollback.put("a", PLAIN)
+    scrollback.take_flush()
+    scrollback.put("b\nc\nd", RED)
+    flush = scrollback.take_flush()
+    assert (flush.clear, flush.trim) == (False, 0)
+    assert flush.runs == [("a", PLAIN), ("b\nc\nd", RED)]
+
+
+def test_trim_within_the_displayed_lines():
+    scrollback = Scrollback(3)
+    scrollback.put("1\n2\n3\n", PLAIN)
+    scrollback.take_flush()
+    scrollback.put("4\n", PLAIN)
+    flush = scrollback.take_flush()
+    assert (flush.clear, flush.trim, flush.runs) == (False, 1, [("4\n", PLAIN)])
+
+
+def test_trim_beyond_the_displayed_lines_clears_and_rebuilds():
+    scrollback = Scrollback(3)
+    scrollback.put("1\n", PLAIN)
+    scrollback.take_flush()
+    scrollback.put(
+        "2\n3\n4\n5\n", PLAIN
+    )  # drops lines 1 and 2: more than was displayed
+    flush = scrollback.take_flush()
+    assert (flush.clear, flush.trim, flush.runs) == (True, 0, [("3\n4\n5\n", PLAIN)])
+
+
+def test_a_trim_only_flush_leaves_the_tail_alone():
+    scrollback = Scrollback(3)
+    scrollback.put("1\n2\n3\n", PLAIN)
+    scrollback.take_flush()
+    scrollback.max_lines = 2
+    flush = scrollback.take_flush()
+    assert (flush.clear, flush.trim, flush.runs) == (False, 1, None)
+
+
+def test_cursor_moves_alone_do_not_dirty_the_tail():
+    scrollback = Scrollback(3)
+    scrollback.put("abc", PLAIN)
+    scrollback.take_flush()
+    scrollback.put("\r\b", PLAIN)
+    assert scrollback.take_flush() is None
+
+
+def test_clear_resets_everything():
+    scrollback = Scrollback(3)
+    scrollback.put("1\n2", PLAIN)
+    scrollback.take_flush()
+    scrollback.clear()
+    assert scrollback.text == ""
+    assert scrollback.take_flush() is None
+    scrollback.put("x", PLAIN)
+    assert scrollback.take_flush().runs == [("x", PLAIN)]

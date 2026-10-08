@@ -7,6 +7,7 @@ Nothing here imports Toga. The widget feeds text through a :class:`Stream` into 
 from __future__ import annotations
 
 import codecs
+from collections import deque
 from dataclasses import dataclass
 
 MAX_SEQUENCE_LENGTH = 256
@@ -97,3 +98,144 @@ class Stream:
                         self._state = _GROUND
                 break
         return "".join(out)
+
+
+DEFAULT_MAX_LINES = 2000
+"""Committed lines kept; the oldest drop past this."""
+
+MAX_LINE_LENGTH = 4096
+"""A line reaching this many cells is committed as if a newline had arrived."""
+
+Run = tuple[str, Style]
+"""A stretch of text drawn in one style."""
+
+
+@dataclass
+class Flush:
+    """What one display update must do, in order.
+
+    ``clear`` empties the display first; otherwise ``trim`` lines are removed from the
+    top. Then ``runs`` replace everything after the display's last newline; ``None``
+    means the tail did not change.
+    """
+
+    clear: bool
+    trim: int
+    runs: list[Run] | None
+
+
+def _extend(runs: list[Run], text: str, style: Style) -> None:
+    """Append text to ``runs``, merging it into the last run when the style matches."""
+    if runs and runs[-1][1] == style:
+        runs[-1] = (runs[-1][0] + text, style)
+    else:
+        runs.append((text, style))
+
+
+def _runs(cells: list[str], styles: list[Style]) -> list[Run]:
+    runs: list[Run] = []
+    for ch, style in zip(cells, styles, strict=True):
+        _extend(runs, ch, style)
+    return runs
+
+
+class Scrollback:
+    """Committed lines plus the current line with a cursor, and the flush counters.
+
+    The display shows the committed lines as of the last flush followed by the current
+    line as of that flush. ``take_flush`` turns what changed since into one
+    :class:`Flush`.
+    """
+
+    def __init__(self, max_lines: int):
+        self._max_lines = max_lines
+        self.lines: deque[list[Run]] = deque()
+        self._cells: list[str] = []
+        self._styles: list[Style] = []
+        self._cursor = 0
+        self._displayed = 0  # committed lines the display showed after the last flush
+        self._committed = 0  # lines committed since
+        self._dropped = 0  # lines dropped from the top since
+        self._tail_dirty = False
+
+    @property
+    def max_lines(self) -> int:
+        return self._max_lines
+
+    @max_lines.setter
+    def max_lines(self, value: int) -> None:
+        self._max_lines = value
+        self._trim()
+
+    @property
+    def text(self) -> str:
+        parts = ["".join(text for text, _ in line) + "\n" for line in self.lines]
+        parts.append("".join(self._cells))
+        return "".join(parts)
+
+    def current_runs(self) -> list[Run]:
+        return _runs(self._cells, self._styles)
+
+    def put(self, text: str, style: Style) -> None:
+        for ch in text:
+            if ch == "\n":
+                self._commit()
+            elif ch == "\r":
+                self._cursor = 0
+            elif ch == "\b":
+                self._cursor = max(0, self._cursor - 1)
+            elif ch == "\t" or (ch >= " " and ch != "\x7f"):
+                if self._cursor < len(self._cells):
+                    self._cells[self._cursor] = ch
+                    self._styles[self._cursor] = style
+                else:
+                    self._cells.append(ch)
+                    self._styles.append(style)
+                self._cursor += 1
+                self._tail_dirty = True
+                if len(self._cells) >= MAX_LINE_LENGTH:
+                    self._commit()
+            # Every other control character is dropped.
+
+    def clear(self) -> None:
+        self.lines.clear()
+        self._cells, self._styles, self._cursor = [], [], 0
+        self._displayed = self._committed = self._dropped = 0
+        self._tail_dirty = False
+
+    def take_flush(self) -> Flush | None:
+        committed, dropped, dirty = self._committed, self._dropped, self._tail_dirty
+        if not (committed or dropped or dirty):
+            return None
+        clear = dropped > self._displayed
+        runs: list[Run] | None = None
+        if committed or dirty or clear:
+            runs = []
+            if clear:
+                new_lines = list(self.lines)
+            elif committed:
+                new_lines = list(self.lines)[-committed:]
+            else:
+                new_lines = []
+            for line in new_lines:
+                for text, style in line:
+                    _extend(runs, text, style)
+                _extend(runs, "\n", runs[-1][1] if runs else PLAIN)
+            for text, style in self.current_runs():
+                _extend(runs, text, style)
+        self._displayed = len(self.lines)
+        self._committed = self._dropped = 0
+        self._tail_dirty = False
+        return Flush(clear=clear, trim=0 if clear else dropped, runs=runs)
+
+    def _commit(self) -> None:
+        self.lines.append(self.current_runs())
+        self._cells, self._styles, self._cursor = [], [], 0
+        self._committed += 1
+        self._tail_dirty = True
+        self._trim()
+
+    def _trim(self) -> None:
+        while len(self.lines) > self._max_lines:
+            self.lines.popleft()
+            self._dropped += 1
