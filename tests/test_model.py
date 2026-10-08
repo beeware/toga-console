@@ -1,4 +1,5 @@
 import pytest
+from travertino.colors import Color
 
 from toga_console.model import MAX_SEQUENCE_LENGTH, Stream, Style
 
@@ -14,6 +15,18 @@ def test_style_is_a_frozen_value():
     assert {Style(bold=True)} == {Style(bold=True)}
     with pytest.raises(AttributeError):
         style.bold = True
+
+
+def test_style_parses_its_colour_on_construction():
+    red = Color.parse("red")
+    assert Style(color="red").color == red
+    assert Style(color=red).color == red
+    assert Style().color is None
+    with pytest.raises(ValueError, match="no-such-colour"):
+        Style(color="no-such-colour")
+    # Equality and hashing survive the parse.
+    assert Style(color="red") == Style(color="red")
+    assert len({Style(color="red"), Style(color="red")}) == 1
 
 
 def test_decodes_a_multibyte_character_split_across_chunks():

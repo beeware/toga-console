@@ -10,6 +10,8 @@ import codecs
 from collections import deque
 from dataclasses import dataclass
 
+from travertino.colors import Color
+
 MAX_SEQUENCE_LENGTH = 256
 """An escape sequence this long without its terminator is abandoned and dropped."""
 
@@ -18,12 +20,18 @@ MAX_SEQUENCE_LENGTH = 256
 class Style:
     """How a stream's text is drawn.
 
-    ``color`` is any Toga colour value, or ``None`` for the widget's own text colour.
+    ``color`` is any Toga colour value, parsed on construction (an unknown colour
+    raises :class:`ValueError`), or ``None`` for the widget's own text colour.
     """
 
-    color: str | None = None
+    color: Color | str | None = None
     bold: bool = False
     italic: bool = False
+
+    def __post_init__(self) -> None:
+        if self.color is not None and not isinstance(self.color, Color):
+            # The dataclass is frozen, so the parsed colour goes in through object.
+            object.__setattr__(self, "color", Color.parse(self.color))
 
 
 PLAIN = Style()

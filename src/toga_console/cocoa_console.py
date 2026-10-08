@@ -1,5 +1,4 @@
 from rubicon.objc import NSRange
-from toga.colors import Color
 from toga_cocoa.colors import native_color
 from toga_cocoa.libs import (
     NSAttributedString,
@@ -45,6 +44,9 @@ class Console(MultilineTextInput):
     def set_readonly(self, value):
         self.native_text.editable = False  # a console is never editable
 
+    def set_enabled(self, value):
+        self.native_text.selectable = value  # editing stays off
+
     def set_font(self, font):
         super().set_font(font)
         self.base_font = font._impl.native
@@ -64,6 +66,14 @@ class Console(MultilineTextInput):
     # Console backend contract
 
     def replace_tail(self, runs):
+        # Build every piece first: an exception between beginEditing and endEditing
+        # would leave the storage mid-edit.
+        pieces = [
+            NSAttributedString.alloc().initWithString(
+                text, attributes=self._attributes(style)
+            )
+            for text, style in runs
+        ]
         storage = self.native_text.textStorage
         length = storage.length()
         found = storage.string.rangeOfString("\n", options=NSBackwardsSearch)
@@ -71,12 +81,8 @@ class Console(MultilineTextInput):
         storage.beginEditing()
         if length > start:
             storage.deleteCharactersInRange(NSRange(start, length - start))
-        for text, style in runs:
-            storage.appendAttributedString(
-                NSAttributedString.alloc().initWithString(
-                    text, attributes=self._attributes(style)
-                )
-            )
+        for piece in pieces:
+            storage.appendAttributedString(piece)
         storage.endEditing()
 
     def trim_lines(self, count):
@@ -115,9 +121,7 @@ class Console(MultilineTextInput):
             font = NSFontManager.sharedFontManager.convertFont(font, toHaveTrait=traits)
         attributes[NSFontAttributeName] = font
         attributes[NSForegroundColorAttributeName] = (
-            self.base_color
-            if style.color is None
-            else native_color(Color.parse(style.color))
+            self.base_color if style.color is None else native_color(style.color)
         )
         self.attributes[style] = attributes
         return attributes
