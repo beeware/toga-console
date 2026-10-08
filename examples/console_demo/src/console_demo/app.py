@@ -29,6 +29,9 @@ BURST = [
     b"\x1b[31mRed via CSI, stripped\x1b[0m\r\n",
     "Split emoji: 🐍".encode()[:-2],
     "🐍".encode()[-2:] + b" done\r\n",
+    # A combining accent that opens a line can hide the newline before it.
+    b"\xcc\x81 accent",
+    b" line\r\n",
 ]
 EXPECTED = (
     "Hello from the burst\n"
@@ -36,6 +39,7 @@ EXPECTED = (
     "Backspace demo: abcY\n"
     "Red via CSI, stripped\n"
     "Split emoji: 🐍 done\n"
+    "\u0301 accent line\n"
 )
 CHILD_SCRIPT = (
     "import sys, time\n"
@@ -95,7 +99,8 @@ class ConsoleDemo(toga.App):
         def feed():
             for chunk in BURST:
                 os.write(write_end, chunk)
-                time.sleep(0.05)
+                # Outlast the 50 ms flush interval, so each chunk is shown on its own.
+                time.sleep(0.1)
             os.close(write_end)
 
         attachment = self.console.attach(read_end, stream="stderr")
@@ -136,7 +141,7 @@ class ConsoleDemo(toga.App):
         self.pipe()
         for _ in range(100):
             await asyncio.sleep(0.05)
-            if self.console.value.count("done") >= 2:
+            if self.console.value.count("accent line") >= 2:
                 break
         await asyncio.sleep(0.2)
         native, model = self.console._impl.get_value(), self.console.value

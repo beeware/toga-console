@@ -11,6 +11,7 @@ from toga_cocoa.libs import (
 from toga_cocoa.widgets.multilinetextinput import MultilineTextInput
 
 # NSStringCompareOptions
+NSLiteralSearch = 2  # matches a newline even when a combining character follows it
 NSBackwardsSearch = 4
 # NSFontTraitMask
 NSItalicFontMask = 1 << 0
@@ -76,7 +77,9 @@ class Console(MultilineTextInput):
         ]
         storage = self.native_text.textStorage
         length = storage.length()
-        found = storage.string.rangeOfString("\n", options=NSBackwardsSearch)
+        found = storage.string.rangeOfString(
+            "\n", options=NSBackwardsSearch | NSLiteralSearch
+        )
         start = 0 if found.location == NSNotFound else found.location + 1
         storage.beginEditing()
         if length > start:
@@ -92,7 +95,7 @@ class Console(MultilineTextInput):
         end = 0
         for _ in range(count):
             found = string.rangeOfString(
-                "\n", options=0, range=NSRange(end, length - end)
+                "\n", options=NSLiteralSearch, range=NSRange(end, length - end)
             )
             if found.location == NSNotFound:
                 end = length
