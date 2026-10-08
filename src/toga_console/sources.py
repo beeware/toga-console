@@ -26,6 +26,7 @@ class Attachment:
         self._done = asyncio.Event()
         self._task: asyncio.Task | None = None
         self._cleanup: Callable[[], None] | None = None
+        self._on_end: Callable[[], None] | None = None
 
     @property
     def done(self) -> bool:
@@ -51,18 +52,25 @@ class Attachment:
             self._cleanup = None
         self.error = error
         self._done.set()
+        if self._on_end is not None:
+            self._on_end()
+            self._on_end = None
 
 
-def start_pump(source, sink: Sink, stream: str) -> Attachment:
+def start_pump(
+    source, sink: Sink, stream: str, on_end: Callable[[], None] | None = None
+) -> Attachment:
     """Start reading ``source`` into ``sink`` on the running loop.
 
     ``source`` is an :class:`asyncio.StreamReader`, an async iterable of bytes or
     text, an object with ``fileno()``, or a file descriptor. A regular file is read
     to its current end; it is not followed. Anything else raises ``TypeError``.
-    Needs a running event loop.
+    Needs a running event loop. ``on_end`` is called once, on the loop, when the
+    attachment ends for any reason, after ``done`` is set.
     """
     loop = asyncio.get_running_loop()
     attachment = Attachment(stream)
+    attachment._on_end = on_end
     if isinstance(source, asyncio.StreamReader):
         pump = _pump_reader
     elif hasattr(source, "__aiter__"):
@@ -200,4 +208,6 @@ def _pump_fd_thread(loop, fd: int, sink: Sink, attachment: Attachment) -> None:
             os.close(wake_r)
 
     attachment._cleanup = wake
-    threading.Thread(target=read, daemon=True).start()
+    threading.Thread(
+        target=read, name=f"toga-console reader fd {fd}", daemon=True
+    ).start()

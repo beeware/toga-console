@@ -46,7 +46,7 @@ class Console(toga.MultilineTextInput):
             be applied to the widget.
         :param max_lines: Committed lines kept in the scrollback; the oldest drop.
         :param encoding: The encoding used to decode bytes written to any stream.
-        :param errors: The decoding error policy, as for :func:`codecs.lookup`.
+        :param errors: The decoding error policy, as for :func:`codecs.lookup_error`.
         :param follow: Keep the newest output in view after each update.
         :param styles: A mapping from stream name to :class:`Style`, merged over the
             default, which draws ``stderr`` in red.
@@ -58,9 +58,9 @@ class Console(toga.MultilineTextInput):
         """
         if max_lines < 1:
             raise ValueError("max_lines must be at least 1")
-        codecs.lookup(
-            encoding
-        )  # LookupError for an unknown encoding, before anything is built
+        # Unknown names raise LookupError here, before anything is built.
+        codecs.lookup(encoding)
+        codecs.lookup_error(errors)
         if "font_family" not in kwargs and (
             style is None or "font_family" not in style
         ):
@@ -71,6 +71,7 @@ class Console(toga.MultilineTextInput):
         self._errors = errors
         self._scrollback = Scrollback(max_lines)
         self._streams: dict[str, Stream] = {}
+        self._live_attachments: dict[str, int] = {}  # per stream name
         self._styles: dict[str, Style] = dict(DEFAULT_STYLES)
         if styles is not None:
             self._styles.update(styles)
@@ -150,7 +151,22 @@ class Console(toga.MultilineTextInput):
         end, not followed. Returns the :class:`Attachment`, which can cancel the
         source or be awaited for its end.
         """
-        return start_pump(source, lambda data: self.write(data, stream=stream), stream)
+
+        def ended() -> None:
+            # Once no live source shares the stream, a character or sequence this one
+            # left open must not swallow the next source's text.
+            self._live_attachments[stream] -= 1
+            if not self._live_attachments[stream]:
+                del self._live_attachments[stream]
+                if (channel := self._streams.get(stream)) is not None:
+                    channel.reset()
+
+        attachment = start_pump(
+            source, lambda data: self.write(data, stream=stream), stream, on_end=ended
+        )
+        # Counted once start_pump returns; no attachment ends before then.
+        self._live_attachments[stream] = self._live_attachments.get(stream, 0) + 1
+        return attachment
 
     def clear(self) -> None:
         """Empty the scrollback and the display at once."""
@@ -214,7 +230,9 @@ class Console(toga.MultilineTextInput):
 
     def _schedule_flush(self) -> None:
         if self._pending_flush is not None:
-            return
+            if not self._pending_flush.done():
+                return
+            self._pending_flush = None  # cancelled from outside before it could flush
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:

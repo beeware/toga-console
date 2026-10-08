@@ -1,6 +1,8 @@
 import asyncio
 import os
+import select
 import sys
+import threading
 
 import pytest
 from toga_dummy.utils import EventLog
@@ -15,6 +17,14 @@ async def until(predicate, timeout=2.0):  # noqa: ASYNC109
             return
         await asyncio.sleep(0.01)
     raise AssertionError("condition never became true")
+
+
+@pytest.fixture(params=["loop", "thread"])
+def pump(request):
+    """Run a descriptor test through the loop's reader, then Android's reader thread."""
+    if request.param == "thread":
+        request.getfixturevalue("fake_android")
+    return request.param
 
 
 async def test_stream_reader_source(app):
@@ -48,7 +58,7 @@ async def test_async_iterable_source(app):
     assert console.value == "abc\n"
 
 
-async def test_file_descriptor_source(app):
+async def test_file_descriptor_source(app, pump):
     read_end, write_end = os.pipe()
     console = Console()
     attachment = console.attach(read_end)
@@ -60,7 +70,7 @@ async def test_file_descriptor_source(app):
     assert attachment.done and attachment.error is None
 
 
-async def test_file_object_source(app):
+async def test_file_object_source(app, pump):
     read_end, write_end = os.pipe()
     console = Console()
     with os.fdopen(read_end, "rb", buffering=0) as reader:
@@ -139,7 +149,7 @@ async def test_cancel_stops_the_pump(app):
     attachment.cancel()  # idempotent
 
 
-async def test_cancel_removes_a_file_descriptor_reader(app):
+async def test_cancel_removes_a_file_descriptor_reader(app, pump):
     read_end, write_end = os.pipe()
     console = Console()
     attachment = console.attach(read_end)
@@ -168,7 +178,7 @@ async def test_source_errors_are_kept_on_the_attachment(app):
     assert attachment.done
 
 
-async def test_a_failing_sink_ends_a_descriptor_attachment(app):
+async def test_a_failing_sink_ends_a_descriptor_attachment(app, pump):
     console = Console(errors="strict")
     read_end, write_end = os.pipe()
     attachment = console.attach(read_end)
@@ -176,6 +186,32 @@ async def test_a_failing_sink_ends_a_descriptor_attachment(app):
     with pytest.raises(UnicodeDecodeError):
         await asyncio.wait_for(attachment.wait(), 2)
     assert asyncio.get_running_loop().remove_reader(read_end) is False
+    os.close(write_end)
+    os.close(read_end)
+
+
+async def test_cancelling_a_thread_pump_leaves_the_next_chunk_for_the_owner(
+    app, fake_android
+):
+    read_end, write_end = os.pipe()
+    name = f"toga-console reader fd {read_end}"
+
+    def readers_alive():
+        return [thread.name for thread in threading.enumerate()].count(name)
+
+    console = Console()
+    attachment = console.attach(read_end)
+    assert readers_alive() == 1
+    os.write(write_end, b"first")
+    await until(lambda: console.value == "first")
+    attachment.cancel()
+    await attachment.wait()
+    os.write(write_end, b"late")
+    await asyncio.sleep(0.1)  # time for a reader that was not woken to take it
+    readable, _, _ = select.select([read_end], [], [], 0)
+    assert readable == [read_end], "the cancelled reader took the next chunk"
+    assert os.read(read_end, 10) == b"late"
+    await until(lambda: not readers_alive())
     os.close(write_end)
     os.close(read_end)
 
@@ -194,6 +230,50 @@ async def test_clear_during_streaming_keeps_later_output(app):
     console.flush()
     assert console.value == "new\n"
     assert console._impl.shadow == "new\n"
+
+
+@pytest.mark.parametrize("end", ["eof", "cancel", "error"])
+async def test_a_source_ending_mid_sequence_does_not_poison_the_next(app, end):
+    console = Console()
+    reader = asyncio.StreamReader()
+    attachment = console.attach(reader)
+    reader.feed_data(b"a\x1b]0;title")  # the source ends inside an OSC
+    await until(lambda: console.value == "a")
+    if end == "eof":
+        reader.feed_eof()
+        await attachment.wait()
+    elif end == "cancel":
+        attachment.cancel()
+        await attachment.wait()
+    else:
+        reader.set_exception(OSError("gone"))
+        with pytest.raises(OSError, match="gone"):
+            await attachment.wait()
+
+    reader = asyncio.StreamReader()
+    attachment = console.attach(reader)
+    reader.feed_data(b"hello\n")
+    reader.feed_eof()
+    await attachment.wait()
+    console.flush()
+    assert console.value == "ahello\n"
+
+
+async def test_stream_state_is_kept_while_another_attachment_shares_the_stream(app):
+    console = Console()
+    first, second = asyncio.StreamReader(), asyncio.StreamReader()
+    first_attachment = console.attach(first)
+    second_attachment = console.attach(second)
+    snake = "🐍".encode()
+    first.feed_data(b"a" + snake[:2])
+    await until(lambda: console.value == "a")  # half the snake waits in the decoder
+    second.feed_eof()
+    await second_attachment.wait()
+    first.feed_data(snake[2:] + b"\n")
+    first.feed_eof()
+    await first_attachment.wait()
+    console.flush()
+    assert console.value == "a🐍\n"
 
 
 async def test_attach_rejects_other_sources(app):

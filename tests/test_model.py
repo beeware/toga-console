@@ -80,6 +80,17 @@ def test_an_escape_inside_an_osc_starts_a_new_sequence():
     assert make_stream().filter("a\x1b]0;title\x1b[31mb") == "ab"
 
 
+def test_an_escape_inside_a_csi_starts_a_new_sequence():
+    assert make_stream().filter("a\x1b[3\x1b[31mb") == "ab"
+    stream = make_stream()
+    assert stream.filter("a\x1b[3") == "a"
+    assert stream.filter("\x1b[31mb") == "b"
+
+
+def test_an_escape_inside_an_intermediate_sequence_starts_a_new_sequence():
+    assert make_stream().filter("a\x1b(\x1b[31mb") == "ab"
+
+
 def test_an_escape_followed_by_a_control_character_is_text():
     assert make_stream().filter("a\x1b\nb") == "a\nb"
 
@@ -96,6 +107,16 @@ def test_streams_keep_their_own_parser_state():
     assert one.filter("\x1b[") == ""
     assert two.filter("plain") == "plain"
     assert one.filter("mdone") == "done"
+
+
+def test_reset_returns_a_stream_to_ground():
+    stream = make_stream()
+    assert stream.filter("\x1b]0;tit") == ""  # an OSC left open
+    stream.reset()
+    assert stream.filter("x") == "x"
+    assert stream.decode(b"\xf0") == ""  # the lead byte of a four-byte character
+    stream.reset()
+    assert stream.decode(b"ok") == "ok"
 
 
 from toga_console.model import MAX_LINE_LENGTH, PLAIN, Scrollback  # noqa: E402
@@ -137,6 +158,12 @@ def test_other_control_characters_are_dropped_and_tabs_kept():
     scrollback = Scrollback(10)
     scrollback.put("a\x00b\x07c\td\x7fe", PLAIN)
     assert scrollback.text == "abc\tde"
+
+
+def test_lone_surrogates_become_replacement_characters():
+    scrollback = Scrollback(10)
+    scrollback.put("a\udcffb", PLAIN)
+    assert scrollback.text == "a�b"
 
 
 def test_a_line_at_the_length_limit_is_committed():

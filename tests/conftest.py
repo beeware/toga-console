@@ -1,4 +1,5 @@
 import os
+import sys
 
 import pytest
 import toga
@@ -14,6 +15,13 @@ def pytest_configure(config):
 @pytest.fixture(autouse=True)
 def reset_event_log():
     EventLog.reset()
+
+
+@pytest.fixture
+def fake_android(monkeypatch):
+    """Send descriptors to the Android reader thread, which runs on any POSIX host."""
+    # start_pump detects Android by this function, which only Android's sys has.
+    monkeypatch.setattr(sys, "getandroidapilevel", lambda: 34, raising=False)
 
 
 @pytest.fixture

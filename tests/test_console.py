@@ -70,6 +70,8 @@ def test_constructor_validation(app):
         Console(max_lines=0)
     with pytest.raises(LookupError):
         Console(encoding="no-such-codec")
+    with pytest.raises(LookupError, match="bogus"):
+        Console(errors="bogus")
 
 
 def test_no_interface_warning(app):
@@ -115,6 +117,17 @@ async def test_flush_now_cancels_the_pending_flush(app):
     console.flush()
     await asyncio.sleep(FLUSH_INTERVAL * 3)
     assert len(actions(console, "replace tail")) == 1
+
+
+async def test_a_flush_task_cancelled_from_outside_does_not_block_later_flushes(app):
+    console = Console()
+    console.write("a")
+    console._pending_flush.cancel()  # as an app cancelling its tasks might
+    await asyncio.sleep(0)
+    assert console._pending_flush.done()
+    console.write("b")
+    await asyncio.sleep(FLUSH_INTERVAL * 3)
+    assert console._impl.shadow == "ab"
 
 
 async def test_on_change_fires_once_per_changed_flush(app):
@@ -167,6 +180,14 @@ def test_escape_sequences_and_carriage_returns(app):
     )
     assert console.value == "Progress: 100%\nred\n"
     assert console._impl.shadow == console.value
+
+
+def test_lone_surrogates_never_reach_the_display(app):
+    # surrogateescape decodes the undecodable byte 0xE9 to the lone surrogate U+DCE9.
+    console = Console(errors="surrogateescape")
+    console.write(b"caf\xe9\n")
+    assert console.value == "caf�\n"
+    assert console._impl.shadow == "caf�\n"
 
 
 def test_value_assignment_clears_then_writes(app):

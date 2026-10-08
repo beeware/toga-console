@@ -58,6 +58,12 @@ class Stream:
     def decode(self, data: bytes) -> str:
         return self._decoder.decode(data)
 
+    def reset(self) -> None:
+        """Drop a partial character or sequence left open, returning to ground."""
+        self._decoder.reset()
+        self._state = _GROUND
+        self._length = 0
+
     def filter(self, text: str) -> str:
         """Return ``text`` without escape sequences, remembering one left open."""
         out: list[str] = []
@@ -87,7 +93,10 @@ class Stream:
                         self._state = _GROUND
                         continue
                 elif self._state == _CSI:
-                    if "\x40" <= ch <= "\x7e":
+                    if ch == _ESC:
+                        # The sequence was cut short; the ESC opens a new one.
+                        self._state, self._length = _ESCAPE, 1
+                    elif "\x40" <= ch <= "\x7e":
                         self._state = _GROUND
                 elif self._state == _OSC:
                     if ch == _BEL:
@@ -102,7 +111,9 @@ class Stream:
                         self._state, self._length = _ESCAPE, 1
                         continue
                 else:  # _INTERMEDIATE
-                    if "\x30" <= ch <= "\x7e":
+                    if ch == _ESC:
+                        self._state, self._length = _ESCAPE, 1  # as in a CSI
+                    elif "\x30" <= ch <= "\x7e":
                         self._state = _GROUND
                 break
         return "".join(out)
@@ -193,6 +204,8 @@ class Scrollback:
             elif ch == "\b":
                 self._cursor = max(0, self._cursor - 1)
             elif ch == "\t" or (ch >= " " and ch != "\x7f"):
+                if "\ud800" <= ch <= "\udfff":
+                    ch = "\ufffd"  # a lone surrogate: no native text view can hold one
                 if self._cursor < len(self._cells):
                     self._cells[self._cursor] = ch
                     self._styles[self._cursor] = style
