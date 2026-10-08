@@ -52,16 +52,23 @@ class Console(MultilineTextInput):
         self.native.post(self.bottom_scroller)
 
     def _scroll_to_bottom_now(self):
+        bottom = self._bottom()
+        if bottom is not None:
+            self.native.scrollTo(0, bottom)
+
+    def _bottom(self):
+        # The scroll offset that shows the end of the text; None before the first
+        # layout pass.
         native = self.native
         layout = native.getLayout()
         if layout is None:
-            return
-        bottom = (
+            return None
+        text_bottom = (
             layout.getLineTop(layout.getLineCount())
             + native.getPaddingTop()
             + native.getPaddingBottom()
         )
-        native.scrollTo(0, max(0, bottom - native.getHeight()))
+        return max(0, text_bottom - native.getHeight())
 
     # Console backend contract
 
@@ -85,9 +92,15 @@ class Console(MultilineTextInput):
             end = index + 1
         if end:
             editable.delete(0, end)
+            # TextView keeps its scroll offset when the text shrinks, which could
+            # leave the view past the end of what remains.
+            bottom = self._bottom()
+            if bottom is not None and self.native.getScrollY() > bottom:
+                self.native.scrollTo(0, bottom)
 
     def clear(self):
         self.native.getText().clear()
+        self.native.scrollTo(0, 0)  # TextView would keep the old offset
 
     # Selection and styles
 

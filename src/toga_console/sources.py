@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
+import select
 import stat
 import sys
 import threading
@@ -145,14 +147,19 @@ def _pump_fd(loop, fd: int, sink: Sink, attachment: Attachment) -> None:
 
 
 def _pump_fd_thread(loop, fd: int, sink: Sink, attachment: Attachment) -> None:
-    """Read a descriptor with blocking reads on a daemon thread, for Android.
+    """Read a descriptor on a daemon thread, for Android.
 
     Toga's Android selector passes on only read and write readiness, and Android
     reports a pipe whose writer has closed as a hang-up alone, so a reader added with
-    ``add_reader`` never sees the EOF. A blocking read returns it. The descriptor's
-    blocking mode is left as it is. Once the attachment is done nothing more is
-    delivered, and the thread exits when its current read returns.
+    ``add_reader`` never sees the EOF. This thread waits in ``poll()`` instead, which
+    always reports a hang-up, and the read that follows returns the EOF. It also
+    polls a private wake pipe. The attachment's cleanup writes a byte to the wake
+    pipe and closes its write end, so ``cancel`` ends the thread without another
+    read, and whatever arrives later stays in the descriptor for its owner. The
+    thread closes the wake pipe's read end as it exits. The descriptor's blocking
+    mode is left as it is; a read that would block is retried.
     """
+    wake_r, wake_w = os.pipe()
 
     def deliver(chunk: bytes) -> None:
         if attachment.done:
@@ -162,19 +169,35 @@ def _pump_fd_thread(loop, fd: int, sink: Sink, attachment: Attachment) -> None:
         except Exception as exc:
             attachment._finish(exc)
 
-    def read() -> None:
-        while not attachment.done:
-            try:
-                chunk = os.read(fd, READ_CHUNK)
-            except OSError as exc:
-                if not attachment.done:
-                    loop.call_soon_threadsafe(attachment._finish, exc)
-                return
-            if attachment.done:
-                return
-            if not chunk:
-                loop.call_soon_threadsafe(attachment._finish)
-                return
-            loop.call_soon_threadsafe(deliver, chunk)
+    def wake() -> None:
+        # Attachment._finish calls this once, on the loop. The thread may already
+        # have closed its end, so the write can fail.
+        with contextlib.suppress(OSError):
+            os.write(wake_w, b"\0")
+        with contextlib.suppress(OSError):
+            os.close(wake_w)
 
+    def read() -> None:
+        poller = select.poll()
+        poller.register(fd, select.POLLIN | select.POLLHUP | select.POLLERR)
+        poller.register(wake_r, select.POLLIN)
+        try:
+            while True:
+                if any(ready == wake_r for ready, _events in poller.poll()):
+                    break
+                try:
+                    chunk = os.read(fd, READ_CHUNK)
+                except BlockingIOError:
+                    continue
+                except OSError as exc:
+                    loop.call_soon_threadsafe(attachment._finish, exc)
+                    break
+                if not chunk:
+                    loop.call_soon_threadsafe(attachment._finish)
+                    break
+                loop.call_soon_threadsafe(deliver, chunk)
+        finally:
+            os.close(wake_r)
+
+    attachment._cleanup = wake
     threading.Thread(target=read, daemon=True).start()
