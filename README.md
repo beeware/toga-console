@@ -1,13 +1,11 @@
 # toga-console
 
-A [Toga](https://toga.readthedocs.io) widget that behaves like a console. Feed it bytes or text from anywhere: a subprocess's stdout and stderr, an OS pipe, an asyncio stream, a serial link. It decodes incrementally, honours carriage returns and backspaces, strips terminal escape sequences, keeps a bounded scrollback, and follows the newest output. Native backends for macOS, iOS, Android, Linux with GTK, and Qt, plus the dummy backend for tests.
+A [Toga](https://toga.readthedocs.io) widget that behaves like a console. Feed it bytes or text from anywhere: a subprocess's stdout and stderr, an OS pipe, an asyncio stream, a serial link. It decodes incrementally, honors carriage returns and backspaces, strips terminal escape sequences, keeps a bounded scrollback, and follows the newest output. Native backends for macOS, iOS, Android, Linux with GTK, and Qt, plus the dummy backend for tests.
 
 ## Install
 
-Not on PyPI yet. Install it from GitHub:
-
 ```console
-pip install git+https://github.com/beeware/toga-console.git
+pip install toga-console
 ```
 
 or `pip install .` from a checkout. The widget uses whichever Toga backend the app has installed; on Linux that is `toga-gtk` or `toga-qt`.
@@ -117,8 +115,6 @@ TOGA_BACKEND=toga_qt ../../../.venv/bin/python -m console_demo
 
 On macOS, Linux, and iOS the demo installs the widget straight from this repository; add `-r` after changing the widget source so Briefcase reinstalls it.
 
-On Android the demo installs the widget from a wheel in `dist/`, because Gradle rejects a path requirement whose directory contains the Android build tree. Build the wheel from the repository root before each Android run that should pick up widget changes:
-
 ```console
 uv build --wheel
 cd examples/console_demo
@@ -128,10 +124,6 @@ briefcase run android -r
 CI also runs the self-test on GTK and on Qt under Ubuntu, and fails unless it prints `SELFTEST OK`.
 
 Every user-visible change needs a fragment in `changes/`, named `<issue>.<kind>.md` where kind is `feature`, `bugfix`, `removal`, `doc`, or `misc`. Release notes are assembled with `towncrier build`.
-
-## A note on the interface name
-
-The widget looks its backends up under the Toga interface group `toga_console`. Toga currently warns about `toga_` interface names it does not know; the widget suppresses that one warning when it asks for its factory, and the block goes away once Toga has a way to register external widgets.
 
 ## Community
 
@@ -145,7 +137,3 @@ We foster a welcoming and respectful community as described in our [BeeWare Comm
 ## Contributing
 
 If you experience problems with the `Console` widget, [log them on GitHub](https://github.com/beeware/toga-console/issues). If you want to contribute code, please [fork the code](https://github.com/beeware/toga-console) and [submit a pull request](https://github.com/beeware/toga-console/pulls).
-
-## Licence
-
-BSD-3-Clause.
