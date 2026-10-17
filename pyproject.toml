@@ -28,7 +28,7 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/kattni/toga-console"
+Homepage = "https://github.com/beeware/toga-console"
 
 [project.entry-points."toga_console.backend.toga_dummy"]
 Console = "toga_console.dummy_console:Console"

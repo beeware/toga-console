@@ -7,7 +7,7 @@ A [Toga](https://toga.readthedocs.io) widget that behaves like a console. Feed i
 Not on PyPI yet. Install it from GitHub:
 
 ```
-pip install git+https://github.com/kattni/toga-console.git
+pip install git+https://github.com/beeware/toga-console.git
 ```
 
 or `pip install .` from a checkout.
