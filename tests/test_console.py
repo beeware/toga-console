@@ -37,11 +37,12 @@ def test_defaults(app):
     assert actions(console, "clear") == []
 
 
-def test_readonly_cannot_be_turned_off(app):
-    console = Console()
+def test_readonly_can_be_turned_off(app):
+    console = Console(readonly=False)
+    assert console.readonly is False
+    assert attribute_value(console, "readonly") is False
+    console.readonly = True
     assert console.readonly is True
-    with pytest.raises(ValueError, match="always read-only"):
-        console.readonly = False
     assert attribute_value(console, "readonly") is True
 
 

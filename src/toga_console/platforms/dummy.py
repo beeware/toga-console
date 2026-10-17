@@ -5,12 +5,14 @@ class Console(MultilineTextInput):
     """Records the backend calls and mirrors them on a shadow string.
 
     The shadow lets the tests check that the calls the widget issues reproduce the
-    model's text, which is the contract every native backend meets.
+    model's text, which is the contract every native backend meets. ``input`` stands
+    for the text typed after the output, which the output calls never touch.
     """
 
     def create(self):
         self._action("create Console")
         self.shadow = ""
+        self.input = ""
 
     def get_value(self):
         return self.shadow
@@ -31,3 +33,15 @@ class Console(MultilineTextInput):
     def clear(self):
         self._action("clear")
         self.shadow = ""
+
+    # Typing, as a native backend sees it
+
+    def type(self, text):
+        """Type ``text`` at the end of the input, as a user would."""
+        self._action("type", text=text)
+        if self.get_readonly():
+            return
+        text = self.input + text
+        if "\n" in text or "\r" in text:
+            text = self.interface._enter_input(text)
+        self.input = text

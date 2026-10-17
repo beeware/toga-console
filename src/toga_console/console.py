@@ -1,10 +1,11 @@
-"""The Console widget: a read-only, scrolling view fed by ``write``."""
+"""The Console widget: a scrolling view fed by ``write``, with optional typed input."""
 
 from __future__ import annotations
 
 import asyncio
 import codecs
 import warnings
+import weakref
 from collections.abc import Mapping
 from functools import cached_property
 from typing import Any
@@ -17,6 +18,7 @@ from toga.widgets.multilinetextinput import OnChangeHandler
 
 from .model import DEFAULT_MAX_LINES, PLAIN, Scrollback, Stream, Style
 from .sources import Attachment, start_pump
+from .stdin import InputPipe
 
 FLUSH_INTERVAL = 0.05
 """Seconds between a write and the display update that shows it."""
@@ -35,6 +37,7 @@ class Console(toga.MultilineTextInput):
         errors: str = "replace",
         follow: bool = True,
         styles: Mapping[str, Style] | None = None,
+        readonly: bool = True,
         placeholder: str | None = None,
         on_change: OnChangeHandler | None = None,
         **kwargs,
@@ -50,6 +53,9 @@ class Console(toga.MultilineTextInput):
         :param follow: Keep the newest output in view after each update.
         :param styles: A mapping from stream name to :class:`Style`, merged over the
             default, which draws ``stderr`` in red.
+        :param readonly: Whether the console refuses typed input. When ``False``, the
+            user can type after the last output; each line entered is echoed on
+            stream ``"stdin"`` and sent to :attr:`stdin`.
         :param placeholder: The content to display when the console is empty.
         :param on_change: A handler invoked once per display update that changed
             what is shown.
@@ -77,12 +83,13 @@ class Console(toga.MultilineTextInput):
             self._styles.update(styles)
         self._follow = follow
         self._pending_flush: asyncio.Task | None = None
+        self._stdin: InputPipe | None = None
 
         super().__init__(
             id=id,
             style=style,
             value=None,
-            readonly=True,
+            readonly=readonly,
             placeholder=placeholder,
             on_change=on_change,
             **kwargs,
@@ -208,16 +215,20 @@ class Console(toga.MultilineTextInput):
         return self._styles
 
     @property
-    def readonly(self) -> bool:
-        """A console is always read-only."""
-        return True
+    def stdin(self) -> int:
+        """The read end of a pipe that receives each line typed into the console.
 
-    @readonly.setter
-    def readonly(self, value: object) -> None:
-        # toga-core's __init__ assigns True here, which makes the native view read-only.
-        if not value:
-            raise ValueError("a Console is always read-only")
-        self._impl.set_readonly(True)
+        A file descriptor, created on first use, that anything taking a descriptor
+        can read: pass it as a subprocess's ``stdin``, read it from a thread, or
+        watch it on the loop. Each line arrives encoded with the console's encoding
+        and ends with ``"\n"``. Lines typed before anything reads wait in the pipe.
+        The console owns the descriptor and closes it when the console is garbage
+        collected; do not close it yourself.
+        """
+        if self._stdin is None:
+            self._stdin = InputPipe()
+            weakref.finalize(self, self._stdin.close)
+        return self._stdin.read_fd
 
     # Internals
 
@@ -227,6 +238,22 @@ class Console(toga.MultilineTextInput):
         except KeyError:
             channel = self._streams[name] = Stream(name, self._encoding, self._errors)
             return channel
+
+    def _enter_input(self, text: str) -> str:
+        """Take the text in the console's input area from the backend.
+
+        The backend calls this when the input area's text would contain a line
+        break: on Enter, or on a paste. Every complete line is echoed on stream
+        ``"stdin"`` and sent to :attr:`stdin`, and the display is updated at once.
+        Returns the text after the last line break, which stays in the input area.
+        """
+        *lines, rest = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+        for line in lines:
+            self.write(line + "\n", stream="stdin")
+            if self._stdin is not None:
+                self._stdin.write((line + "\n").encode(self._encoding, self._errors))
+        self.flush()
+        return rest
 
     def _schedule_flush(self) -> None:
         if self._pending_flush is not None:
