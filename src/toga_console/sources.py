@@ -103,7 +103,7 @@ async def _run(pump, source, sink: Sink, attachment: Attachment) -> None:
     except asyncio.CancelledError:
         attachment._finish()
         raise
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         attachment._finish(exc)
     else:
         attachment._finish()
@@ -147,7 +147,7 @@ def _pump_fd(loop, fd: int, sink: Sink, attachment: Attachment) -> None:
             return
         try:
             sink(chunk)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             attachment._finish(exc)
 
     attachment._cleanup = lambda: loop.remove_reader(fd)
@@ -174,7 +174,7 @@ def _pump_fd_thread(loop, fd: int, sink: Sink, attachment: Attachment) -> None:
             return
         try:
             sink(chunk)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             attachment._finish(exc)
 
     def wake() -> None:

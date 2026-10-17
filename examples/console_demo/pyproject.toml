@@ -1,23 +1,26 @@
 [build-system]
-requires = ["briefcase"]
+requires = [
+    "setuptools==84.0.0",
+    "setuptools_scm==10.3.4",
+]
+build-backend = "setuptools.build_meta"
 
 [project]
+dynamic = ["version"]
 name = "console_demo"
-version = "0.0.1"
 
 [tool.briefcase]
 project_name = "Console Demo"
 bundle = "org.beeware.examples"
-version = "0.0.1"
 url = "https://beeware.org"
 license = "BSD-3-Clause"
-license-files = ["LICENSE"]
+license-files = ["../../LICENSE"]
 author = "Kattni"
 author_email = "hello@kattni.com"
 description = "A demo of the toga-console widget."
 # macOS and iOS install the widget from this repository; Android installs it from a
-# built wheel (run `uv build` at the repository root first), because Gradle rejects
-# a path requirement whose directory contains the Android build tree.
+# built wheel (run `uv build --wheel` from the repository root first), because Gradle
+# rejects a path requirement whose directory contains the Android build tree.
 requires = []
 
 [tool.briefcase.app.console_demo]
@@ -39,11 +42,18 @@ requires = [
 ]
 
 [tool.briefcase.app.console_demo.android]
+requirement_installer_args = [
+    "-f", "../../dist",
+    "--pre",
+]
 requires = [
-    "../../dist/toga_console-0.1.0.dev0-py3-none-any.whl",
+    "toga_console",
     "toga-android ~= 0.5.7",
 ]
 base_theme = "Theme.MaterialComponents.Light.DarkActionBar"
 build_gradle_dependencies = [
     "com.google.android.material:material:1.12.0",
 ]
+
+[tool.setuptools_scm]
+root = "../../"

@@ -46,7 +46,7 @@ def test_readonly_cannot_be_turned_off(app):
 
 
 @pytest.mark.parametrize(
-    "kwargs, expected",
+    ("kwargs", "expected"),
     [
         ({"font_family": SERIF}, [SERIF]),
         ({"style": Pack(font_family=SERIF)}, [SERIF]),
@@ -88,6 +88,7 @@ async def test_write_shows_after_a_flush(app):
     assert console._impl.shadow == ""
     console.flush()
     assert console._impl.shadow == "hello\n"
+    assert console._impl.get_value() == "hello\n"
     assert actions(console, "replace tail") == [
         {"action": "replace tail", "runs": [("hello\n", Style())]}
     ]

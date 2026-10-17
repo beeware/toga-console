@@ -1,4 +1,5 @@
 import asyncio
+import errno
 import os
 import select
 import sys
@@ -8,6 +9,7 @@ import pytest
 from toga_dummy.utils import EventLog
 
 from toga_console import Attachment, Console, Style
+from toga_console.sources import start_pump
 
 
 async def until(predicate, timeout=2.0):  # noqa: ASYNC109
@@ -42,7 +44,8 @@ async def test_stream_reader_source(app):
     await attachment.wait()
     console.flush()
     assert console.value == "one\ntwo\n"
-    assert attachment.done and attachment.error is None
+    assert attachment.done
+    assert attachment.error is None
 
 
 async def test_async_iterable_source(app):
@@ -67,7 +70,8 @@ async def test_file_descriptor_source(app, pump):
     os.close(write_end)
     await attachment.wait()
     os.close(read_end)
-    assert attachment.done and attachment.error is None
+    assert attachment.done
+    assert attachment.error is None
 
 
 async def test_file_object_source(app, pump):
@@ -92,7 +96,8 @@ async def test_regular_file_source_ends_at_the_current_end(app, tmp_path):
         await asyncio.wait_for(attachment.wait(), 2)
     console.flush()
     assert console.value == "line 1\nline 2\n"
-    assert attachment.done and attachment.error is None
+    assert attachment.done
+    assert attachment.error is None
 
     # An empty file ends at once and adds nothing.
     shown = console.value
@@ -103,7 +108,8 @@ async def test_regular_file_source_ends_at_the_current_end(app, tmp_path):
         await asyncio.wait_for(attachment.wait(), 2)
     console.flush()
     assert console.value == shown
-    assert attachment.done and attachment.error is None
+    assert attachment.done
+    assert attachment.error is None
 
 
 async def test_a_real_subprocess_on_both_streams(app):
@@ -145,7 +151,8 @@ async def test_cancel_stops_the_pump(app):
     await asyncio.sleep(0.05)
     console.flush()
     assert console.value == ""
-    assert attachment.done and attachment.error is None
+    assert attachment.done
+    assert attachment.error is None
     attachment.cancel()  # idempotent
 
 
@@ -188,6 +195,99 @@ async def test_a_failing_sink_ends_a_descriptor_attachment(app, pump):
     assert asyncio.get_running_loop().remove_reader(read_end) is False
     os.close(write_end)
     os.close(read_end)
+
+
+async def test_a_descriptor_read_that_would_block_is_retried(app, pump, monkeypatch):
+    # A wake-up can find the descriptor already drained; the pump waits for the next.
+    real_read = os.read
+    read_end, write_end = os.pipe()
+    blocked = []
+
+    def read(fd, length):
+        if fd == read_end and not blocked:
+            blocked.append(fd)
+            raise BlockingIOError
+        return real_read(fd, length)
+
+    monkeypatch.setattr(os, "read", read)
+    console = Console()
+    attachment = console.attach(read_end)
+    os.write(write_end, b"hello")
+    await until(lambda: console.value == "hello")
+    assert blocked == [read_end]
+    attachment.cancel()
+    await attachment.wait()
+    os.close(write_end)
+    os.close(read_end)
+
+
+async def test_a_descriptor_read_error_is_kept_on_the_attachment(
+    app, pump, monkeypatch
+):
+    real_read = os.read
+    read_end, write_end = os.pipe()
+
+    def read(fd, length):
+        if fd == read_end:
+            raise OSError(errno.EIO, "I/O error")
+        return real_read(fd, length)
+
+    monkeypatch.setattr(os, "read", read)
+    console = Console()
+    attachment = console.attach(read_end)
+    os.write(write_end, b"x")
+    with pytest.raises(OSError, match="I/O error"):
+        await asyncio.wait_for(attachment.wait(), 2)
+    assert attachment.error.errno == errno.EIO
+    os.close(write_end)
+    os.close(read_end)
+
+
+async def test_a_thread_pump_drops_a_chunk_queued_after_it_ended(
+    app, fake_android, monkeypatch
+):
+    loop = asyncio.get_running_loop()
+    real_read = os.read
+    real_call_soon_threadsafe = loop.call_soon_threadsafe
+    read_end, write_end = os.pipe()
+    queued = threading.Semaphore(0)
+
+    def read(fd, length):
+        # One byte at a time, so the two bytes arrive as two chunks.
+        return real_read(fd, 1 if fd == read_end else length)
+
+    def call_soon_threadsafe(callback, *args):
+        handle = real_call_soon_threadsafe(callback, *args)
+        if callback.__name__ == "deliver":
+            queued.release()
+        return handle
+
+    monkeypatch.setattr(os, "read", read)
+    monkeypatch.setattr(loop, "call_soon_threadsafe", call_soon_threadsafe)
+    console = Console(errors="strict")
+    os.write(write_end, b"\xffa")
+    attachment = console.attach(read_end)
+    # Hold the loop until both chunks are queued, so the undecodable first chunk
+    # ends the attachment before the second is delivered.
+    for _ in range(2):
+        assert queued.acquire(timeout=2)
+    with pytest.raises(UnicodeDecodeError):
+        await asyncio.wait_for(attachment.wait(), 2)
+    await asyncio.sleep(0)
+    console.flush()
+    assert console.value == ""
+    os.close(write_end)
+    os.close(read_end)
+
+
+async def test_a_pump_needs_no_end_callback():
+    async def chunks():
+        yield b"x"
+
+    received = []
+    attachment = start_pump(chunks(), received.append, "stdout")
+    await attachment.wait()
+    assert received == [b"x"]
 
 
 async def test_cancelling_a_thread_pump_leaves_the_next_chunk_for_the_owner(
