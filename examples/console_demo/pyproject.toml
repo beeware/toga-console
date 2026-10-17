@@ -16,7 +16,7 @@ author = "Kattni"
 author_email = "hello@kattni.com"
 description = "A demo of the toga-console widget."
 # macOS and iOS install the widget from this repository; Android installs it from a
-# built wheel (run `uv build` in packages/toga-console first), because Gradle rejects
+# built wheel (run `uv build` at the repository root first), because Gradle rejects
 # a path requirement whose directory contains the Android build tree.
 requires = []
 

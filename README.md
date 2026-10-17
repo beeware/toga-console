@@ -4,11 +4,13 @@ A [Toga](https://toga.readthedocs.io) widget that behaves like a console. Feed i
 
 ## Install
 
-Not on PyPI yet. From a checkout of this repository:
+Not on PyPI yet. Install it from GitHub:
 
 ```
-pip install packages/toga-console
+pip install git+https://github.com/kattni/toga-console.git
 ```
+
+or `pip install .` from a checkout.
 
 ## Use
 
@@ -89,7 +91,12 @@ pytest
 
 runs on the dummy backend with warnings as errors. The native backends are checked by the demo's self-test on each platform.
 
-When developing inside the PyScribBLE repository, install the package editable into its venv from the repository root: `uv pip install -e packages/toga-console`.
+To set up a development venv from a checkout:
+
+```
+uv venv
+uv pip install --group dev -e .
+```
 
 ## A note on the interface name
 
