@@ -1,10 +1,13 @@
 [build-system]
-requires = ["setuptools >= 77"]
+requires = [
+    "setuptools==84.0.0",
+    "setuptools_scm==10.3.4",
+]
 build-backend = "setuptools.build_meta"
 
 [project]
+dynamic = ["version"]
 name = "toga-console"
-version = "0.1.0.dev0"
 description = "A Toga widget that behaves like a console, showing the output of any pipe-like source."
 readme = "README.md"
 requires-python = ">= 3.11"
@@ -19,6 +22,11 @@ classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3.15",
     "Programming Language :: Python :: 3 :: Only",
     "Topic :: Software Development :: User Interfaces",
     "Topic :: Software Development :: Widget Sets",
@@ -43,34 +51,150 @@ Console = "toga_console.iOS_console:Console"
 Console = "toga_console.android_console:Console"
 
 [dependency-groups]
+# Extras used by developers *of* toga-console are pinned to specific versions to
+# ensure environment consistency.
+pre-commit = [
+    "pre-commit == 4.6.2",
+]
+
+setuptools-scm = [
+    "setuptools_scm==10.3.4",
+]
+
+towncrier = [
+    "towncrier == 26.9.0",
+]
+
+tox = [
+    "tox-uv == 1.36.1",
+]
+
 test = [
-    "pytest >= 9",
-    "pytest-asyncio >= 1.4",
+    "coverage",
+    "pytest",
+    "pytest-asyncio",
     "toga-dummy >= 0.5.7",
 ]
+
 dev = [
+    {include-group = "pre-commit"},
     {include-group = "test"},
-    "briefcase >= 0.4.5",
-    "ruff",
+    {include-group = "towncrier"},
+    {include-group = "tox"},
+    "briefcase",
 ]
 
-[tool.setuptools.packages.find]
-where = ["src"]
+[tool.codespell]
+skip = ".git,.venv,.tox,*.lock"
+# "caf" is the start of "café" in the decoding tests.
+ignore-words-list = "caf"
 
-[tool.ruff]
-line-length = 88
-target-version = "py311"
+[tool.coverage.run]
+parallel = true
+branch = true
+relative_files = true
+source_pkgs = ["toga_console"]
+omit = [
+    "*/toga_console/cocoa_console.py",
+    "*/toga_console/iOS_console.py",
+    "*/toga_console/android_console.py",
+]
 
-[tool.ruff.lint]
-select = ["E", "W", "F", "UP", "B", "ASYNC", "C4", "I"]
-# E501: the formatter wraps code; long strings and asserts stay readable.
-ignore = ["E501"]
+[tool.coverage.paths]
+source = ["src/toga_console", "**/toga_console"]
 
-[tool.ruff.lint.isort]
-known-first-party = ["toga_console"]
+[tool.coverage.report]
+fail_under = 100
+show_missing = true
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 filterwarnings = ["error"]
 testpaths = ["tests"]
+
+[tool.ruff.lint]
+# In addition to the default rules, these additional rules will be used:
+extend-select = [
+    "E",      # pycodestyle
+    "W",      # pycodestyle
+    "F",      # pyflakes
+    "UP",     # pyupgrade
+    "B",      # flake8-bugbear
+    "YTT",    # flake8-2020
+    "ASYNC",  # flake8-async
+    "C4",     # flake8-comprehensions
+    "I",      # isort
+    "RUF",    # ruff-specific rules
+    "PT",     # flake8-pytest-style
+    "FURB",   # refurb
+    "ISC",    # flake8-implicit-str-concat
+    "PGH",    # pygrep-hooks
+    "T20",    # flake8-print
+    "PIE",    # flake8-pie
+    "SIM",    # flake8-simplify
+]
+
+ignore = [
+    # The SIM rules are *very* opinionated, and don't necessarily make for better code.
+]
+
+[tool.ruff.lint.isort]
+combine-as-imports = true
+known-first-party = ["toga_console"]
+
+[tool.ruff.lint.per-file-ignores]
+# The module is named after the toga_iOS backend it implements.
+"src/toga_console/iOS_console.py" = ["N999"]
+# The demo prints its self-test verdict to the log
+"examples/console_demo/src/console_demo/app.py" = ["T201"]
+
+[tool.rumdl]
+flavor = "mkdocs"
+include = ["**/*.md"]
+exclude = ["CODE_OF_CONDUCT.md", "changes/template.md",]
+respect-gitignore = true
+force-exclude = true
+
+# Disable rules:
+# MD013: Line length - flagging on mkdocstrings content
+# MD014: Forces commands in codeblocks to show output
+# MD042: Empty link - buggy, still flagging on valid MkDocs formatting
+# MD052: Reference link not found - buggy, flagging on valis MkDocs links
+disable = ["MD014", "MD042", "MD052"]
+
+[tool.rumdl.per-file-ignores]
+"changes/**/*.md" = ["MD041"]
+
+[tool.rumdl.MD013]  # Line length
+line_length = 999999  # Force reflow to paragraph content to remove linebreaks
+reflow = true
+reflow_mode = "normalize"
+
+[tool.rumdl.MD026]  # Remove punctuation at the end of headings
+punctuation = ",;:"
+
+[tool.rumdl.MD033]  # No inline HTML
+allowed_elements = ["nospell",]  # pyspelling inline disable tag
+
+[tool.rumdl.MD046]
+style = "fenced"
+
+[tool.setuptools_scm]
+# To enable SCM versioning, we need an empty tool configuration for setuptools_scm
+
+[tool.towncrier]
+directory = "changes"
+package = "toga_console"
+package_dir = "src"
+filename = "CHANGELOG.md"
+title_format = "## {version} ({project_date})"
+issue_format = "[#{issue}](https://github.com/beeware/toga-console/issues/{issue})"
+template = "changes/template.md"
+type = [
+    { directory = "feature", name = "Features", showcontent = true },
+    { directory = "bugfix", name = "Bugfixes", showcontent = true },
+    { directory = "removal", name = "Backward Incompatible Changes", showcontent = true },
+    { directory = "doc", name = "Documentation", showcontent = true },
+    { directory = "misc", name = "Misc", showcontent = false },
+]

@@ -53,6 +53,7 @@ def test_undecodable_bytes_follow_the_errors_policy():
         "\x1b]0;Done | 10.3.1\x07",  # OSC title, BEL terminator
         "\x1b]0;Done | 10.3.1\x1b\\",  # OSC title, ST terminator
         "\x1b(B",  # charset designation, intermediate + final
+        "\x1b$)C",  # multibyte charset designation, two intermediates + final
         "\x1b7",  # save cursor
         "\x1bM",  # reverse index
         "\x1b=",  # keypad mode

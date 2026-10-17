@@ -6,7 +6,7 @@ A [Toga](https://toga.readthedocs.io) widget that behaves like a console. Feed i
 
 Not on PyPI yet. Install it from GitHub:
 
-```
+```console
 pip install git+https://github.com/beeware/toga-console.git
 ```
 
@@ -79,28 +79,52 @@ A line reaching 4096 characters is split, a sequence of 256 characters without i
 
 `write` and every other method run on the event loop thread. From another thread, use `loop.call_soon_threadsafe(console.write, data)`. Sources given to `attach` are delivered to `write` on the loop; on Android a helper thread does the reading.
 
-## Demo
+## Developing
 
-`examples/console_demo` is a Briefcase app with a self-test that compares the native view's text with the model's. From that directory: `briefcase dev` on macOS, `briefcase run iOS` on the simulator, and for Android build the wheel first (`uv build` in the package directory) because Gradle rejects a path requirement whose directory contains the Android build tree, then `briefcase run android`.
-
-## Tests
-
-```
-pytest
-```
-
-runs on the dummy backend with warnings as errors. The native backends are checked by the demo's self-test on each platform.
-
-To set up a development venv from a checkout:
-
-```
+```console
 uv venv
-uv pip install --group dev -e .
+uv pip install -e . --group dev
+.venv/bin/tox -m test
 ```
+
+The test suite runs against Toga's dummy backend with warnings as errors, and requires 100% coverage of everything except the native backends. `.venv/bin/pre-commit install` runs the same lint and format checks as CI before each commit.
+
+The native backends are checked with the Briefcase app in `examples/console_demo`, which has a self-test that compares the native view's text with the model's:
+
+```console
+cd examples/console_demo
+briefcase dev            # macOS
+briefcase run iOS        # iOS simulator
+```
+
+On macOS and iOS the demo installs the widget straight from this repository; add `-r` after changing the widget source so Briefcase reinstalls it.
+
+On Android the demo installs the widget from a wheel in `dist/`, because Gradle rejects a path requirement whose directory contains the Android build tree. Build the wheel from the repository root before each Android run that should pick up widget changes:
+
+```console
+uv build --wheel
+cd examples/console_demo
+briefcase run android -r
+```
+
+Every user-visible change needs a fragment in `changes/`, named `<issue>.<kind>.md` where kind is `feature`, `bugfix`, `removal`, `doc`, or `misc`. Release notes are assembled with `towncrier build`.
 
 ## A note on the interface name
 
 The widget looks its backends up under the Toga interface group `toga_console`. Toga currently warns about `toga_` interface names it does not know; the widget suppresses that one warning when it asks for its factory, and the block goes away once Toga has a way to register external widgets.
+
+## Community
+
+`toga-console` is part of the [BeeWare suite](https://beeware.org). You can talk to the community through:
+
+- [@beeware@fosstodon.org on Mastodon](https://fosstodon.org/@beeware)
+- [Discord](https://beeware.org/bee/chat/)
+
+We foster a welcoming and respectful community as described in our [BeeWare Community Code of Conduct](https://beeware.org/community/behavior/).
+
+## Contributing
+
+If you experience problems with the `Console` widget, [log them on GitHub](https://github.com/beeware/toga-console/issues). If you want to contribute code, please [fork the code](https://github.com/beeware/toga-console) and [submit a pull request](https://github.com/beeware/toga-console/pulls).
 
 ## Licence
 
