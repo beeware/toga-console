@@ -8,7 +8,7 @@ import threading
 import pytest
 from toga_dummy.utils import EventLog
 
-from toga_console import Attachment, Console, Style
+from toga_console import Attachment, Console, Style, sources
 from toga_console.sources import start_pump
 
 
@@ -21,11 +21,18 @@ async def until(predicate, timeout=2.0):  # noqa: ASYNC109
     raise AssertionError("condition never became true")
 
 
-@pytest.fixture(params=["loop", "thread"])
+@pytest.fixture(params=["loop", "android", "windows"])
 def pump(request):
-    """Run a descriptor test through the loop's reader, then Android's reader thread."""
-    if request.param == "thread":
-        request.getfixturevalue("fake_android")
+    """Run a descriptor test through the loop's reader, then each reader thread."""
+    if request.param != "loop":
+        request.getfixturevalue(f"fake_{request.param}")
+    return request.param
+
+
+@pytest.fixture(params=["android", "windows"])
+def thread_pump(request):
+    """Run a descriptor test through Android's reader thread, then Windows'."""
+    request.getfixturevalue(f"fake_{request.param}")
     return request.param
 
 
@@ -244,7 +251,7 @@ async def test_a_descriptor_read_error_is_kept_on_the_attachment(
 
 
 async def test_a_thread_pump_drops_a_chunk_queued_after_it_ended(
-    app, fake_android, monkeypatch
+    app, thread_pump, monkeypatch
 ):
     loop = asyncio.get_running_loop()
     real_read = os.read
@@ -291,7 +298,7 @@ async def test_a_pump_needs_no_end_callback():
 
 
 async def test_cancelling_a_thread_pump_leaves_the_next_chunk_for_the_owner(
-    app, fake_android
+    app, thread_pump
 ):
     read_end, write_end = os.pipe()
     name = f"toga-console reader fd {read_end}"
@@ -314,6 +321,32 @@ async def test_cancelling_a_thread_pump_leaves_the_next_chunk_for_the_owner(
     await until(lambda: not readers_alive())
     os.close(write_end)
     os.close(read_end)
+
+
+async def test_the_windows_reader_keeps_a_peek_error_on_the_attachment(
+    app, fake_windows, monkeypatch
+):
+    def peek_pipe(fd):
+        raise OSError(errno.EBADF, "The handle is invalid")
+
+    monkeypatch.setattr(sources, "_peek_pipe", peek_pipe)
+    read_end, write_end = os.pipe()
+    console = Console()
+    attachment = console.attach(read_end)
+    with pytest.raises(OSError, match="handle is invalid"):
+        await asyncio.wait_for(attachment.wait(), 2)
+    os.close(write_end)
+    os.close(read_end)
+
+
+async def test_windows_attaches_only_pipes_and_regular_files(app, fake_windows):
+    # A character device is neither; Windows has no reader for it.
+    fd = os.open(os.devnull, os.O_RDONLY)
+    try:
+        with pytest.raises(TypeError, match="pipe or a regular file"):
+            Console().attach(fd)
+    finally:
+        os.close(fd)
 
 
 async def test_clear_during_streaming_keeps_later_output(app):

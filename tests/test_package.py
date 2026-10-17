@@ -25,6 +25,7 @@ def test_every_backend_entry_point_names_a_module():
             "toga_gtk",
             "toga_iOS",
             "toga_qt",
+            "toga_winforms",
         )
     }
     for entry_point in backends.values():
