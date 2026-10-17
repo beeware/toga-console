@@ -50,6 +50,12 @@ Console = "toga_console.iOS_console:Console"
 [project.entry-points."toga_console.backend.toga_android"]
 Console = "toga_console.android_console:Console"
 
+[project.entry-points."toga_console.backend.toga_gtk"]
+Console = "toga_console.gtk_console:Console"
+
+[project.entry-points."toga_console.backend.toga_qt"]
+Console = "toga_console.qt_console:Console"
+
 [dependency-groups]
 # Extras used by developers *of* toga-console are pinned to specific versions to
 # ensure environment consistency.
@@ -98,6 +104,8 @@ omit = [
     "*/toga_console/cocoa_console.py",
     "*/toga_console/iOS_console.py",
     "*/toga_console/android_console.py",
+    "*/toga_console/gtk_console.py",
+    "*/toga_console/qt_console.py",
 ]
 
 [tool.coverage.paths]
