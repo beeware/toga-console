@@ -59,6 +59,9 @@ class Console(MultilineTextInput):
         self.length = 0
         self.fonts = {}
         self.input_readonly = True
+        # Set when KeyDown has entered a line for Return, so the character that
+        # follows does not enter another.
+        self.return_entered = False
 
     @property
     def output_length(self):
@@ -206,7 +209,13 @@ class Console(MultilineTextInput):
     # Typing
 
     def winforms_key_down(self, sender, event):
-        """Handle the keys that edit without a character: Delete, paste, and cut."""
+        """Handle the keys the control acts on before their character arrives.
+
+        Return, Delete, paste, and cut edit on the key itself, as does Backspace.
+        """
+        # A key pressed on the keyboard has its character dropped when suppressed,
+        # so the flag only lasts until the next key.
+        self.return_entered = False
         if self.input_readonly:
             return  # Ctrl-C copies as usual
         native = self.native
@@ -218,6 +227,11 @@ class Console(MultilineTextInput):
         char = CONTROL_KEYS.get(key)
         if char is not None and modifiers == Keys.Control:
             self.interface._enter_control(char)
+            suppress(event)
+        elif key == Keys.Return:
+            # The control breaks the line on the key, before its character arrives.
+            self._edit("\n")
+            self.return_entered = True
             suppress(event)
         elif (key == Keys.V and modifiers == Keys.Control) or (
             key == Keys.Insert and modifiers == Keys.Shift
@@ -253,7 +267,11 @@ class Console(MultilineTextInput):
         output_end = self.length
         if char in "\r\n":
             event.Handled = True
-            self._edit("\n")
+            # Normally entered already, in KeyDown, which also drops this character.
+            if self.return_entered:
+                self.return_entered = False
+            else:
+                self._edit("\n")
         elif char == "\b":
             # Normally refused already, in KeyDown.
             if start < output_end or (start == end == output_end):
