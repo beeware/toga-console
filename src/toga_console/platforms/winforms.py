@@ -1,6 +1,6 @@
 from collections import deque
 from contextlib import contextmanager
-from ctypes import WINFUNCTYPE, windll
+from ctypes import WINFUNCTYPE, c_wchar_p, windll
 from ctypes.wintypes import HWND, LPARAM, UINT, WPARAM
 
 from System.Drawing import Font, FontStyle
@@ -8,13 +8,17 @@ from toga.handlers import WeakrefCallable
 from toga_winforms.colors import native_color
 from toga_winforms.widgets.multilinetextinput import MultilineTextInput
 
-# A binding of its own, so the argument types do not change Toga's SendMessageW, and
-# a negative line count can pass as a signed LPARAM.
+# Bindings of their own, so the argument types do not change Toga's SendMessageW: a
+# negative line count passes as a signed LPARAM, and a string as a pointer to it.
 SendMessage = WINFUNCTYPE(LPARAM, HWND, UINT, WPARAM, LPARAM)(
+    ("SendMessageW", windll.user32)
+)
+SendStringMessage = WINFUNCTYPE(LPARAM, HWND, UINT, WPARAM, c_wchar_p)(
     ("SendMessageW", windll.user32)
 )
 WM_SETREDRAW = 0x000B
 EM_LINESCROLL = 0x00B6
+EM_REPLACESEL = 0x00C2
 EM_GETFIRSTVISIBLELINE = 0x00CE
 EM_SETUNDOLIMIT = 0x0452
 
@@ -146,7 +150,10 @@ class Console(MultilineTextInput):
             # Lines wrap, so a deleted line can be several lines on screen.
             self.first_line = max(0, self.first_line - native.GetLineFromCharIndex(end))
         native.Select(start, end - start)
-        native.SelectedText = ""
+        # Assigning "" to SelectedText sends WM_CLEAR, which a read-only control
+        # ignores. EM_REPLACESEL is not blocked by read-only, and 0 keeps it out of
+        # the undo buffer.
+        SendStringMessage(self._hwnd(), EM_REPLACESEL, 0, "")
         self.deletions.append((start, end))
         self.length -= end - start
 
