@@ -97,20 +97,22 @@ uv pip install -e . --group dev
 
 The test suite runs against Toga's dummy backend with warnings as errors, and requires 100% coverage of everything except the native backends. `.venv/bin/pre-commit install` runs the same lint and format checks as CI before each commit.
 
-The native backends are checked with the Briefcase app in `examples/console_demo`, which has a self-test that compares the native view's text with the model's:
+The native backends are checked with the Briefcase project in `examples/console_demo`. Its demo app has a self-test that compares the native view's text with the model's. The project has two apps: `console_demo` uses the platform's own backend, and `console_demo_qt` runs the same demo on Qt on any desktop platform:
 
 ```console
 cd examples/console_demo
-briefcase dev            # macOS, or GTK on Linux
-briefcase run iOS        # iOS simulator
+briefcase dev -a console_demo        # macOS, or GTK on Linux
+briefcase dev -a console_demo_qt     # Qt
+briefcase run iOS -a console_demo    # iOS simulator
 ```
 
-On Linux, `briefcase dev` runs the demo with GTK once [the system packages Toga's GTK backend needs](https://toga.readthedocs.io/en/stable/reference/platforms/linux/gtk.html) are installed. Qt is not a Briefcase target, so run the demo on it from the development venv:
+On Linux, the GTK app needs [the system packages Toga's GTK backend needs](https://toga.readthedocs.io/en/stable/reference/platforms/linux/gtk.html).
+
+Add `--test` to `briefcase dev` to run the self-test as a test suite. It starts the demo, waits for the self-test's verdict, and fails unless the demo prints `SELFTEST OK`. CI runs it for GTK and for Qt under Ubuntu:
 
 ```console
-uv pip install "toga-qt[pyside6]"
-cd examples/console_demo/src
-TOGA_BACKEND=toga_qt ../../../.venv/bin/python -m console_demo
+briefcase dev -a console_demo --test
+briefcase dev -a console_demo_qt --test
 ```
 
 On macOS, Linux, and iOS the demo installs the widget straight from this repository; add `-r` after changing the widget source so Briefcase reinstalls it.
@@ -118,10 +120,8 @@ On macOS, Linux, and iOS the demo installs the widget straight from this reposit
 ```console
 uv build --wheel
 cd examples/console_demo
-briefcase run android -r
+briefcase run android -a console_demo -r
 ```
-
-CI also runs the self-test on GTK and on Qt under Ubuntu, and fails unless it prints `SELFTEST OK`.
 
 Every user-visible change needs a fragment in `changes/`, named `<issue>.<kind>.md` where kind is `feature`, `bugfix`, `removal`, `doc`, or `misc`. Release notes are assembled with `towncrier build`.
 

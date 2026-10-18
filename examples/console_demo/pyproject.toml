@@ -22,6 +22,9 @@ description = "A demo of the toga-console widget."
 # from a built wheel (run `uv build --wheel` from the repository root first), because
 # Gradle rejects a path requirement whose directory contains the Android build tree.
 requires = []
+# `briefcase dev --test` runs the self-test; see tests/test_selftest.py.
+test_sources = ["tests"]
+test_requires = ["pytest"]
 
 [tool.briefcase.app.console_demo]
 formal_name = "Console Demo"
@@ -34,7 +37,8 @@ requires = [
     "std-nslog >= 1.0.0",
 ]
 
-# The Qt backend is not a Briefcase target; the README runs the demo on it directly.
+# Toga refuses to guess when both Linux backends are installed, so this app uses GTK;
+# the console_demo_qt app below runs the same demo on Qt.
 [tool.briefcase.app.console_demo.linux]
 requires = [
     "../..",
@@ -64,3 +68,21 @@ build_gradle_dependencies = [
 
 [tool.setuptools_scm]
 root = "../../"
+
+# The same demo on Qt, on any desktop platform: `briefcase dev -a console_demo_qt`.
+# PySide6 comes from its wheels, so the app also runs in a venv whose Python has no
+# system PySide6, as in CI.
+[tool.briefcase.app.console_demo_qt]
+formal_name = "Console Demo"
+sources = [
+    "src/console_demo_qt",
+    "src/console_demo",
+]
+requires = [
+    "../..",
+    "toga-qt[pyside6-essentials] ~= 0.5.7",
+]
+
+[tool.pytest.ini_options]
+# Stops pytest from taking the widget's own configuration from the repository root.
+testpaths = ["tests"]
