@@ -94,9 +94,9 @@ def start_pump(
                     "a pipe or a regular file"
                 )
             _pump_pipe_thread(loop, fd, sink, attachment)
-        elif hasattr(sys, "getandroidapilevel"):
+        elif hasattr(sys, "getandroidapilevel"):  # pragma: no-cover-if-is-windows
             _pump_fd_thread(loop, fd, sink, attachment)
-        else:
+        else:  # pragma: no-cover-if-is-windows
             _pump_fd(loop, fd, sink, attachment)
         return attachment
     else:
@@ -144,7 +144,9 @@ async def _pump_file(fd: int, sink: Sink) -> None:
         await asyncio.sleep(0)  # let the loop run between the chunks of a large file
 
 
-def _pump_fd(loop, fd: int, sink: Sink, attachment: Attachment) -> None:
+def _pump_fd(  # pragma: no-cover-if-is-windows
+    loop, fd: int, sink: Sink, attachment: Attachment
+) -> None:
     os.set_blocking(fd, False)
 
     def on_readable() -> None:
@@ -167,7 +169,9 @@ def _pump_fd(loop, fd: int, sink: Sink, attachment: Attachment) -> None:
     loop.add_reader(fd, on_readable)
 
 
-def _pump_fd_thread(loop, fd: int, sink: Sink, attachment: Attachment) -> None:
+def _pump_fd_thread(  # pragma: no-cover-if-is-windows
+    loop, fd: int, sink: Sink, attachment: Attachment
+) -> None:
     """Read a descriptor on a daemon thread, for Android.
 
     Toga's Android selector passes on only read and write readiness, and Android
@@ -278,11 +282,12 @@ def _pump_pipe_thread(loop, fd: int, sink: Sink, attachment: Attachment) -> None
     ).start()
 
 
-def _peek_pipe(fd: int) -> int:  # pragma: no cover
+def _peek_pipe(fd: int) -> int:  # pragma: no-cover-if-not-windows
     """Return the bytes waiting in a Windows pipe without reading them.
 
     Raises :class:`BrokenPipeError` once the writer has closed and the pipe is empty.
-    Only Windows has these modules; the tests run the reader with a POSIX stand-in.
+    Only Windows has these modules; elsewhere the tests run the reader with a POSIX
+    stand-in.
     """
     import _winapi
     import msvcrt

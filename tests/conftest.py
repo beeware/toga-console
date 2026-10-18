@@ -1,15 +1,25 @@
-import fcntl
 import os
 import select
 import struct
 import sys
-import termios
 
 import pytest
 import toga
 from toga_dummy.utils import EventLog
 
 from toga_console import sources
+
+WINDOWS = sys.platform == "win32"
+
+if WINDOWS:
+    pipe_bytes_waiting = sources._peek_pipe
+else:
+    import fcntl
+    import termios
+
+    def pipe_bytes_waiting(fd):
+        """The bytes waiting in a pipe, without reading them."""
+        return struct.unpack("i", fcntl.ioctl(fd, termios.FIONREAD, b"\0" * 4))[0]
 
 
 def pytest_configure(config):
@@ -31,19 +41,27 @@ def fake_android(monkeypatch):
 
 
 @pytest.fixture
-def fake_windows(monkeypatch):
-    """Send descriptors to the Windows pipe reader, peeking with a POSIX stand-in."""
+def bytes_waiting():
+    """A function that counts the bytes waiting in a pipe, without reading them."""
+    return pipe_bytes_waiting
 
-    def waiting(fd):
-        return struct.unpack("i", fcntl.ioctl(fd, termios.FIONREAD, b"\0" * 4))[0]
+
+@pytest.fixture
+def fake_windows(monkeypatch):
+    """Send descriptors to the Windows pipe reader.
+
+    On Windows that is the real reader. Elsewhere it peeks with a POSIX stand-in.
+    """
+    if WINDOWS:
+        return
 
     def peek_pipe(fd):
         # As PeekNamedPipe: the bytes waiting, or BrokenPipeError once the writer has
         # closed and nothing is left. An empty pipe that selects readable has ended,
         # unless a write landed in between, so the count is taken again after.
-        count = waiting(fd)
+        count = pipe_bytes_waiting(fd)
         if not count and select.select([fd], [], [], 0)[0]:
-            count = waiting(fd)
+            count = pipe_bytes_waiting(fd)
             if not count:
                 raise BrokenPipeError("the pipe has been ended")
         return count

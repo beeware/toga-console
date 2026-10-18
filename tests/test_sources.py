@@ -1,7 +1,6 @@
 import asyncio
 import errno
 import os
-import select
 import sys
 import threading
 
@@ -10,6 +9,8 @@ from toga_dummy.utils import EventLog
 
 from toga_console import Attachment, Console, Style, sources
 from toga_console.sources import start_pump
+
+WINDOWS = sys.platform == "win32"
 
 
 async def until(predicate, timeout=2.0):  # noqa: ASYNC109
@@ -21,19 +22,25 @@ async def until(predicate, timeout=2.0):  # noqa: ASYNC109
     raise AssertionError("condition never became true")
 
 
+def use_pump(request, pump):
+    if WINDOWS and pump != "windows":
+        # The proactor loop has no add_reader, and Windows has no select.poll.
+        pytest.skip("Windows reads descriptors only with its own reader")
+    if pump != "loop":
+        request.getfixturevalue(f"fake_{pump}")
+    return pump
+
+
 @pytest.fixture(params=["loop", "android", "windows"])
 def pump(request):
     """Run a descriptor test through the loop's reader, then each reader thread."""
-    if request.param != "loop":
-        request.getfixturevalue(f"fake_{request.param}")
-    return request.param
+    return use_pump(request, request.param)
 
 
 @pytest.fixture(params=["android", "windows"])
 def thread_pump(request):
     """Run a descriptor test through Android's reader thread, then Windows'."""
-    request.getfixturevalue(f"fake_{request.param}")
-    return request.param
+    return use_pump(request, request.param)
 
 
 async def test_stream_reader_source(app):
@@ -199,7 +206,8 @@ async def test_a_failing_sink_ends_a_descriptor_attachment(app, pump):
     os.write(write_end, b"\xff")
     with pytest.raises(UnicodeDecodeError):
         await asyncio.wait_for(attachment.wait(), 2)
-    assert asyncio.get_running_loop().remove_reader(read_end) is False
+    if not WINDOWS:  # the proactor loop has no readers to remove
+        assert asyncio.get_running_loop().remove_reader(read_end) is False
     os.close(write_end)
     os.close(read_end)
 
@@ -298,7 +306,7 @@ async def test_a_pump_needs_no_end_callback():
 
 
 async def test_cancelling_a_thread_pump_leaves_the_next_chunk_for_the_owner(
-    app, thread_pump
+    app, thread_pump, bytes_waiting
 ):
     read_end, write_end = os.pipe()
     name = f"toga-console reader fd {read_end}"
@@ -315,8 +323,7 @@ async def test_cancelling_a_thread_pump_leaves_the_next_chunk_for_the_owner(
     await attachment.wait()
     os.write(write_end, b"late")
     await asyncio.sleep(0.1)  # time for a reader that was not woken to take it
-    readable, _, _ = select.select([read_end], [], [], 0)
-    assert readable == [read_end], "the cancelled reader took the next chunk"
+    assert bytes_waiting(read_end) == 4, "the cancelled reader took the next chunk"
     assert os.read(read_end, 10) == b"late"
     await until(lambda: not readers_alive())
     os.close(write_end)

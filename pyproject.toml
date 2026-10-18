@@ -78,6 +78,7 @@ tox = [
 
 test = [
     "coverage",
+    "coverage-conditional-plugin",
     "pytest",
     "pytest-asyncio",
     "toga-dummy >= 0.5.7",
@@ -101,6 +102,7 @@ parallel = true
 branch = true
 relative_files = true
 source_pkgs = ["toga_console"]
+plugins = ["coverage_conditional_plugin"]
 omit = [
     "*/toga_console/platforms/cocoa.py",
     "*/toga_console/platforms/iOS.py",
@@ -112,6 +114,13 @@ omit = [
 
 [tool.coverage.paths]
 source = ["src/toga_console", "**/toga_console"]
+
+[tool.coverage.coverage_conditional_plugin.rules]
+# Each platform's report leaves out the code only another platform runs. The project
+# report combines every platform's data, so CI sets COVERAGE_EXCLUDE_PLATFORM=disable
+# there and every line counts.
+no-cover-if-is-windows = "sys_platform == 'win32' and os_environ.get('COVERAGE_EXCLUDE_PLATFORM') != 'disable'"
+no-cover-if-not-windows = "sys_platform != 'win32' and os_environ.get('COVERAGE_EXCLUDE_PLATFORM') != 'disable'"
 
 [tool.coverage.report]
 fail_under = 100

@@ -96,7 +96,7 @@ uv pip install -e . --group dev
 .venv/bin/tox -m test
 ```
 
-The test suite runs against Toga's dummy backend with warnings as errors, and requires 100% coverage of everything except the native backends. `.venv/bin/pre-commit install` runs the same lint and format checks as CI before each commit.
+The test suite runs against Toga's dummy backend with warnings as errors, and requires 100% coverage of everything except the native backends. CI runs it on Ubuntu and Windows. Code that only one of them runs is marked `# pragma: no-cover-if-is-windows` or `# pragma: no-cover-if-not-windows`, which leaves it out of the other platform's report; the combined report counts every line. `.venv/bin/pre-commit install` runs the same lint and format checks as CI before each commit.
 
 The native backends are checked with the Briefcase app in `examples/console_demo`, which has a self-test that compares the native view's text with the model's:
 
