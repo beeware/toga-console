@@ -47,7 +47,7 @@ Anything running on the event loop can also call `console.write(data, stream="st
 
 | Member | Meaning |
 |---|---|
-| `Console(id=None, style=None, *, max_lines=2000, encoding="utf-8", errors="replace", follow=True, styles=None, placeholder=None, on_change=None, **style_properties)` | Always read-only and selectable; monospace unless a font family is given. |
+| `Console(id=None, style=None, *, max_lines=2000, encoding="utf-8", errors="replace", follow=True, styles=None, readonly=True, placeholder=None, on_change=None, on_input=None, **style_properties)` | Selectable, and monospace unless a font family is given. With `readonly=False`, the user can type after the last output; see [Input](#input). |
 | `write(data, *, stream="stdout")` | Append bytes or text on a named stream. Each stream has its own decoder and escape parser; all streams share one cursor and scrollback. |
 | `attach(source, *, stream="stdout")` | Read a source until it ends: an `asyncio.StreamReader`, an async iterable of bytes or text, a file-like object with `fileno()`, or a file descriptor. Returns an `Attachment`. A regular file is read to its current end. On Android, descriptors are read on a helper thread so end-of-file arrives. On Windows, a descriptor must be a pipe or a regular file, and a pipe is read on a helper thread, because Toga's Windows event loop cannot watch a descriptor; `cancel` leaves whatever arrives later in the pipe. Everywhere else the descriptor is switched to non-blocking for good. The widget never closes a descriptor it was given. |
 | `clear()` | Empty the scrollback and the display at once. |
@@ -55,8 +55,10 @@ Anything running on the event loop can also call `console.write(data, stream="st
 | `value` | The scrollback text. Assigning clears, then writes the text on `stdout`. |
 | `max_lines` | Committed lines kept; assigning trims at once. |
 | `follow` | Scroll to the newest output after each update. |
+| `readonly` | Whether typing is refused. |
 | `styles` | A dict from stream name to `Style`; by default `stderr` is red. A change applies to text written afterwards. |
-| `on_change` | Fires once per display update that changed what is shown. Use it to show a "new output" hint while the console is hidden. |
+| `on_input` | Called as `on_input(widget, data)` with the bytes the user enters: the line on Return, `b"\x03"` on Ctrl-C, `b"\x04"` on Ctrl-D. See [Input](#input). |
+| `on_change` | Fires once per display update that changed what is shown; typing does not fire it. Use it to show a "new output" hint while the console is hidden. |
 | `Attachment` | `cancel()` stops the source; `await wait()` returns at its end or after cancel and raises the error the source raised; `done`, `error`, `stream`. |
 | `Style(color=None, bold=False, italic=False)` | `color` is any Toga colour value; `None` is the widget's own text colour. |
 
@@ -72,6 +74,48 @@ Anything running on the event loop can also call `console.write(data, stream="st
 | other control characters | dropped |
 
 A line reaching 4096 characters is split, a sequence of 256 characters without its terminator is abandoned, and the oldest lines drop past `max_lines`. Long lines wrap at the view's width. Each stream's decoder and escape parser keep their state across writes, so a character or sequence may span two chunks. When an attachment ends and no other live attachment shares its stream, that stream's decoder and parser are reset, so a source that dies mid-sequence cannot swallow the next source's text.
+
+## Input
+
+With `readonly=False`, the console accepts typing after the last output, the way a terminal does: Backspace stops at the output, and a key pressed with the caret in the output types at the end of the input. Output that arrives while you type goes in before your input, which stays where it is.
+
+What the user enters reaches the `on_input` handler as bytes, encoded with the console's encoding:
+
+| Key | Delivered |
+|---|---|
+| Return | the line and `b"\n"`, after it is echoed into the scrollback on stream `"stdin"` (unstyled unless `styles` says otherwise) |
+| a paste with line breaks | all its complete lines in one call; the text after the last break stays in the input |
+| Ctrl-C | `b"\x03"`, at once; the line being typed stays |
+| Ctrl-D | `b"\x04"`, at once; the line being typed stays |
+
+The console gives these bytes no meaning of its own, and does not echo the control keys: the handler decides what they do. A handler should not assume that one call is one line. Feeding a subprocess:
+
+```python
+process = await asyncio.create_subprocess_exec(
+    sys.executable,
+    "-i",
+    "-u",
+    stdin=asyncio.subprocess.PIPE,
+    stdout=asyncio.subprocess.PIPE,
+    stderr=asyncio.subprocess.PIPE,
+)
+
+
+def on_input(widget, data, **kwargs):
+    if data == b"\x04":
+        process.stdin.close()  # end of input
+    elif data == b"\x03":
+        process.send_signal(signal.SIGINT)
+    else:
+        process.stdin.write(data)
+
+
+console = Console(readonly=False, on_input=on_input)
+console.attach(process.stdout)
+console.attach(process.stderr, stream="stderr")
+```
+
+Typing works on macOS, iOS, and Android. Ctrl-C and Ctrl-D come from a hardware keyboard; an on-screen keyboard has no Control key, so an app that needs them on a phone offers its own buttons, which can pass the same bytes to its handler. On Android, Ctrl-C in a console that takes input sends `b"\x03"` rather than copying; a read-only console copies as usual. The demo app's REPL button runs a Python REPL inside the app, on a thread fed from `on_input`, where Ctrl-C raises `KeyboardInterrupt` and Ctrl-D at the prompt ends the REPL; see `examples/console_demo/src/console_demo/repl.py`.
 
 ## Backend notes
 
@@ -98,7 +142,7 @@ uv pip install -e . --group dev
 
 The test suite runs against Toga's dummy backend with warnings as errors, and requires 100% coverage of everything except the native backends. CI runs it on Ubuntu and Windows. Code that only one of them runs is marked `# pragma: no-cover-if-is-windows` or `# pragma: no-cover-if-not-windows`, which leaves it out of the other platform's report; the combined report counts every line. `.venv/bin/pre-commit install` runs the same lint and format checks as CI before each commit.
 
-The native backends are checked with the Briefcase project in `examples/console_demo`. Its demo app has a self-test that compares the native view's text with the model's. The project has two apps: `console_demo` uses the platform's own backend, and `console_demo_qt` runs the same demo on Qt on any desktop platform:
+The native backends are checked with the Briefcase project in `examples/console_demo`. Its demo app has a self-test that compares the native view's text with the model's, then types into the native view and checks the in-app REPL's answers, its Ctrl-C, and its Ctrl-D. The project has two apps: `console_demo` uses the platform's own backend, and `console_demo_qt` runs the same demo on Qt on any desktop platform:
 
 ```console
 cd examples/console_demo

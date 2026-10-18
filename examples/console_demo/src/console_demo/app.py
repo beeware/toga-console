@@ -1,12 +1,17 @@
 """Console Demo: feeds the toga-console widget from a burst, a pipe, and a subprocess.
 
+The REPL button starts a Python REPL inside the app, fed with the bytes the
+console's ``on_input`` handler receives: typed lines, Ctrl-C, and Ctrl-D.
+
 The self-test runs at startup and from its button: it writes the burst directly,
 then streams the same bytes through an OS pipe until the pipe's attachment sees
 the end, and compares the native view's text with the model's text and with the
 expected text. It then trims the console to seven lines and compares the native
 view's text with the model's text and with the last seven expected lines. The
 verdict is printed as ``SELFTEST OK`` or ``SELFTEST FAIL`` so a log reader can
-check a backend without eyes on the screen.
+check a backend without eyes on the screen. The self-test then types ``6 * 7``
+into the native view, as a user would, and checks that the REPL answers, that
+Ctrl-C interrupts a busy loop and a prompt, and that Ctrl-D ends the REPL.
 """
 
 import asyncio
@@ -21,6 +26,9 @@ from toga.platform import current_platform
 
 from toga_console import Console
 from toga_console.model import DEFAULT_MAX_LINES
+
+from .keyboard import native_keyboard
+from .repl import ConsoleRepl
 
 BURST = [
     b"Hello from the burst\r\n",
@@ -56,7 +64,13 @@ CHILD_SCRIPT = (
 
 class ConsoleDemo(toga.App):
     def startup(self):
-        self.console = Console(flex=1, placeholder="Press a button.")
+        self.console = Console(
+            flex=1,
+            readonly=False,
+            placeholder="Press a button.",
+            on_input=self.on_input,
+        )
+        self.repl = None
         self.result = toga.Label("", flex=1)
         self.follow = toga.Switch("Follow", value=True, on_change=self.set_follow)
         buttons = [
@@ -74,7 +88,11 @@ class ConsoleDemo(toga.App):
             children=[
                 toga.Box(children=buttons, direction=ROW, gap=5),
                 toga.Box(
-                    children=[self.follow, self.result],
+                    children=[
+                        toga.Button("REPL", on_press=self.start_repl),
+                        self.follow,
+                        self.result,
+                    ],
                     direction=ROW,
                     align_items="center",
                     gap=5,
@@ -132,6 +150,20 @@ class ConsoleDemo(toga.App):
         self.console.attach(process.stderr, stream="stderr")
         await process.wait()
 
+    def start_repl(self, widget=None, **kwargs):
+        if self.repl is None:
+            self.repl = ConsoleRepl(self.console, {"app": self})
+            self.repl.start().add_done_callback(self._repl_ended)
+        self.console.focus()
+        return self.repl
+
+    def _repl_ended(self, future):
+        self.repl = None
+
+    def on_input(self, widget, data, **kwargs):
+        if self.repl is not None:
+            self.repl.feed(data)
+
     def clear(self, widget=None, **kwargs):
         self.console.clear()
 
@@ -140,6 +172,68 @@ class ConsoleDemo(toga.App):
 
     async def run_self_test(self, widget=None, **kwargs):
         await self.self_test()
+
+    async def input_test(self):
+        """Type into the native view and check the REPL's answers; None if untested."""
+        keyboard = native_keyboard(self.console)
+        if keyboard is None:
+            return None
+
+        def ends(text):
+            return lambda: self.console.value.endswith(text)
+
+        self.console.clear()
+        repl = self.start_repl()
+        if not await until(ends(">>> ")):
+            return False
+        # Typed before the prompt reaches the view: the input area must stay after
+        # the output once it arrives.
+        keyboard.type("6 * ")
+        self.console.flush()
+        # Backspace at the start of the input must not reach the prompt.
+        keyboard.caret_to(self.console._impl.output_length)
+        keyboard.backspace()
+        # Typing with the caret in the output goes to the end of the input.
+        keyboard.caret_to(0)
+        keyboard.type("7")
+        await asyncio.sleep(0.1)
+        keyboard.enter()
+        answered = await until(ends(">>> 6 * 7\n42\n>>> "))
+
+        # Ctrl-C interrupts running code...
+        keyboard.type("while True: pass")
+        keyboard.enter()
+        await until(ends("... "))
+        keyboard.enter()  # the blank line that ends the block
+        await asyncio.sleep(0.3)
+        keyboard.control("c")
+        busy_interrupted = await until(ends("KeyboardInterrupt\n>>> "))
+        # ...and a prompt.
+        keyboard.control("c")
+        prompt_interrupted = await until(ends(">>> \nKeyboardInterrupt\n>>> "))
+
+        # Ctrl-D at the prompt is the end of input.
+        keyboard.control("d")
+        ended = await until(lambda: repl.done.done())
+        self.console.flush()
+        verdict = (
+            answered
+            and busy_interrupted
+            and prompt_interrupted
+            and ended
+            and self.console.value.endswith(">>> \nREPL ended.\n")
+            and self.console._impl.get_value() == self.console.value
+            and keyboard.text() == self.console.value  # nothing left in the input
+        )
+        if not verdict:
+            print(
+                f"INPUT answered={answered} busy={busy_interrupted} "
+                f"prompt={prompt_interrupted} ended={ended} "
+                f"value={self.console.value[-200:]!r} "
+                f"native={keyboard.text()[-200:]!r}",
+                flush=True,
+            )
+        return verdict
 
     async def self_test(self):
         self.console.clear()
@@ -163,15 +257,25 @@ class ConsoleDemo(toga.App):
         trimmed_model = self.console.value
         self.console.max_lines = DEFAULT_MAX_LINES
         ok = ok and trimmed_native == trimmed_model == TRIMMED
+        input_ok = await self.input_test()
+        ok = ok and input_ok is not False
         verdict = "OK" if ok else "FAIL"
         self.result.text = f"Self-test {verdict}"
         print(
             f"SELFTEST {verdict} native={native!r} model={model!r} "
             f"trimmed_native={trimmed_native!r} trimmed_model={trimmed_model!r} "
-            f"pipe_done={pipe_done}",
+            f"pipe_done={pipe_done} input_ok={input_ok}",
             flush=True,
         )
 
 
 def main():
     return ConsoleDemo("Console Demo", "org.beeware.examples.console_demo")
+
+
+async def until(predicate, timeout=3.0):  # noqa: ASYNC109
+    for _ in range(int(timeout / 0.05)):
+        if predicate():
+            return True
+        await asyncio.sleep(0.05)
+    return False
