@@ -54,6 +54,9 @@ Console = "toga_console.platforms.gtk:Console"
 [project.entry-points."toga_console.backend.toga_qt"]
 Console = "toga_console.platforms.qt:Console"
 
+[project.entry-points."toga_console.backend.toga_winforms"]
+Console = "toga_console.platforms.winforms:Console"
+
 [dependency-groups]
 # Extras used by developers *of* toga-console are pinned to specific versions to
 # ensure environment consistency.
@@ -75,6 +78,7 @@ tox = [
 
 test = [
     "coverage",
+    "coverage-conditional-plugin",
     "pytest",
     "pytest-asyncio",
     "toga-dummy >= 0.5.7",
@@ -98,16 +102,25 @@ parallel = true
 branch = true
 relative_files = true
 source_pkgs = ["toga_console"]
+plugins = ["coverage_conditional_plugin"]
 omit = [
     "*/toga_console/platforms/cocoa.py",
     "*/toga_console/platforms/iOS.py",
     "*/toga_console/platforms/android.py",
     "*/toga_console/platforms/gtk.py",
     "*/toga_console/platforms/qt.py",
+    "*/toga_console/platforms/winforms.py",
 ]
 
 [tool.coverage.paths]
 source = ["src/toga_console", "**/toga_console"]
+
+[tool.coverage.coverage_conditional_plugin.rules]
+# Each platform's report leaves out the code only another platform runs. The project
+# report combines every platform's data, so CI sets COVERAGE_EXCLUDE_PLATFORM=disable
+# there and every line counts.
+no-cover-if-is-windows = "sys_platform == 'win32' and os_environ.get('COVERAGE_EXCLUDE_PLATFORM') != 'disable'"
+no-cover-if-not-windows = "sys_platform != 'win32' and os_environ.get('COVERAGE_EXCLUDE_PLATFORM') != 'disable'"
 
 [tool.coverage.report]
 fail_under = 100

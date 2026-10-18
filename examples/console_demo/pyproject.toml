@@ -18,9 +18,10 @@ license-files = ["../../LICENSE"]
 author = "Kattni"
 author_email = "hello@kattni.com"
 description = "A demo of the toga-console widget."
-# macOS, Linux, and iOS install the widget from this repository; Android installs it
-# from a built wheel (run `uv build --wheel` from the repository root first), because
-# Gradle rejects a path requirement whose directory contains the Android build tree.
+# macOS, Linux, Windows, and iOS install the widget from this repository; Android
+# installs it from a built wheel (run `uv build --wheel` from the repository root
+# first), because Gradle rejects a path requirement whose directory contains the
+# Android build tree.
 requires = []
 # `briefcase dev --test` runs the self-test; see tests/test_selftest.py.
 test_sources = ["tests"]
@@ -43,6 +44,12 @@ requires = [
 requires = [
     "../..",
     "toga-gtk ~= 0.5.7",
+]
+
+[tool.briefcase.app.console_demo.windows]
+requires = [
+    "../..",
+    "toga-winforms ~= 0.5.7",
 ]
 
 [tool.briefcase.app.console_demo.iOS]
