@@ -116,19 +116,24 @@ jobs:
   native-tests:
     name: Self-test on ${{ matrix.backend }}
     needs: [ pre-commit ]
-    runs-on: ubuntu-24.04
+    runs-on: ${{ matrix.runs-on }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - backend: toga_gtk
+            runs-on: ubuntu-24.04
             requirement: "toga-gtk ~= 0.5.7"
             system-packages: pkg-config libcairo2-dev libgirepository-2.0-dev gir1.2-gtk-3.0 xvfb
           - backend: toga_qt
+            runs-on: ubuntu-24.04
             requirement: "toga-qt[pyside6-essentials] ~= 0.5.7"
             system-packages: >-
               libegl1 libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-keysyms1
               libxcb-randr0 libxcb-render-util0 libxcb-shape0 libxcb-xinerama0 xvfb
+          - backend: toga_winforms
+            runs-on: windows-latest
+            requirement: "toga-winforms ~= 0.5.7"
 
     steps:
     - name: Checkout
@@ -143,6 +148,7 @@ jobs:
         python-version: "3.13"
 
     - name: Install system packages
+      if: runner.os == 'Linux'
       env:
         SYSTEM_PACKAGES: ${{ matrix.system-packages }}
       run: |
@@ -163,8 +169,15 @@ jobs:
       env:
         TOGA_BACKEND: ${{ matrix.backend }}
         CONSOLE_DEMO_EXIT: "1"
+        # The verdict quotes the console's text, emoji included, and a Windows pipe
+        # would otherwise be written in the ANSI code page.
+        PYTHONUTF8: "1"
       run: |
-        timeout 120 xvfb-run -a python -m console_demo 2>&1 | tee selftest.log
+        if [ "$RUNNER_OS" = "Linux" ]; then
+          timeout 120 xvfb-run -a python -m console_demo 2>&1 | tee selftest.log
+        else
+          timeout 120 python -m console_demo 2>&1 | tee selftest.log
+        fi
         grep -q "SELFTEST OK" selftest.log
 
   coverage:
