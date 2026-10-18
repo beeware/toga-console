@@ -115,7 +115,7 @@ console.attach(process.stdout)
 console.attach(process.stderr, stream="stderr")
 ```
 
-Typing works on macOS, iOS, and Android. Ctrl-C and Ctrl-D come from a hardware keyboard; an on-screen keyboard has no Control key, so an app that needs them on a phone offers its own buttons, which can pass the same bytes to its handler. On Android, Ctrl-C in a console that takes input sends `b"\x03"` rather than copying; a read-only console copies as usual. The demo app's REPL button runs a Python REPL inside the app, on a thread fed from `on_input`, where Ctrl-C raises `KeyboardInterrupt` and Ctrl-D at the prompt ends the REPL; see `examples/console_demo/src/console_demo/repl.py`.
+Typing works on every backend. Ctrl-C and Ctrl-D come from a hardware keyboard; an on-screen keyboard has no Control key, so an app that needs them on a phone offers its own buttons, which can pass the same bytes to its handler. Where Ctrl-C would copy (Android, GTK, Qt on Linux and Windows, and Windows), a console that takes input sends `b"\x03"` instead; a read-only console copies as usual. On macOS, Command-C copies either way. The demo app's REPL button runs a Python REPL inside the app, on a thread fed from `on_input`, where Ctrl-C raises `KeyboardInterrupt` and Ctrl-D at the prompt ends the REPL; see `examples/console_demo/src/console_demo/repl.py`.
 
 ## Backend notes
 

@@ -5,16 +5,19 @@ self-test exercises the backend's own handling of typing, Backspace, Return, and
 the Control keys.
 """
 
-from toga.platform import current_platform
-
 
 def native_keyboard(console):
-    """A keyboard for the console's native view, or None on other platforms."""
+    """A keyboard for the console's native view, or None for other backends."""
+    # By backend, not platform: the Qt demo runs on every desktop platform.
+    backend = type(console._impl).__module__.rpartition(".")[2]
     keyboard = {
-        "macOS": MacKeyboard,
+        "cocoa": MacKeyboard,
         "iOS": IOSKeyboard,
         "android": AndroidKeyboard,
-    }.get(current_platform)
+        "gtk": GtkKeyboard,
+        "qt": QtKeyboard,
+        "winforms": WindowsKeyboard,
+    }.get(backend)
     return None if keyboard is None else keyboard(console._impl)
 
 
@@ -153,3 +156,141 @@ class AndroidKeyboard:
 
     def text(self):
         return str(self.native.getText())
+
+
+class GtkKeyboard:
+    def __init__(self, impl):
+        self.view = impl.native_textview
+        self.buffer = impl.buffer
+
+    def type(self, text):
+        # The key binding signal that typing and pasting use.
+        self.view.emit("insert-at-cursor", text)
+
+    def enter(self):
+        self.type("\n")  # what Return inserts
+
+    def backspace(self):
+        self.view.emit("backspace")
+
+    def caret_to(self, index):
+        self.buffer.place_cursor(self.buffer.get_iter_at_offset(index))
+
+    def control(self, key):
+        from toga_gtk.libs import Gdk, Gtk
+
+        event = Gdk.Event.new(Gdk.EventType.KEY_PRESS)
+        event.key.keyval = Gdk.keyval_from_name(key)
+        event.key.state = Gdk.ModifierType.CONTROL_MASK
+        event.key.window = self.view.get_window(Gtk.TextWindowType.TEXT)
+        self.view.event(event)
+
+    def text(self):
+        start, end = self.buffer.get_bounds()
+        return self.buffer.get_text(start, end, True)
+
+
+class QtKeyboard:
+    def __init__(self, impl):
+        self.native = impl.native
+
+    def _press(self, key, text="", modifiers=None):
+        from PySide6.QtCore import QEvent, Qt
+        from PySide6.QtGui import QKeyEvent
+        from PySide6.QtWidgets import QApplication
+
+        if modifiers is None:
+            modifiers = Qt.KeyboardModifier.NoModifier
+        for kind in (QEvent.Type.KeyPress, QEvent.Type.KeyRelease):
+            QApplication.sendEvent(self.native, QKeyEvent(kind, key, modifiers, text))
+
+    def type(self, text):
+        for char in text:
+            self._press(0, char)
+
+    def enter(self):
+        from PySide6.QtCore import Qt
+
+        self._press(Qt.Key.Key_Return, "\r")
+
+    def backspace(self):
+        from PySide6.QtCore import Qt
+
+        self._press(Qt.Key.Key_Backspace, "\b")
+
+    def caret_to(self, index):
+        cursor = self.native.textCursor()
+        cursor.setPosition(index)
+        self.native.setTextCursor(cursor)
+
+    def control(self, key):
+        import sys
+
+        from PySide6.QtCore import Qt
+
+        # Qt on macOS calls the Control key Meta.
+        modifiers = (
+            Qt.KeyboardModifier.MetaModifier
+            if sys.platform == "darwin"
+            else Qt.KeyboardModifier.ControlModifier
+        )
+        self._press(
+            {"c": Qt.Key.Key_C, "d": Qt.Key.Key_D}[key],
+            chr(ord(key) - ord("a") + 1),
+            modifiers,
+        )
+
+    def text(self):
+        return self.native.document().toRawText().replace("\u2029", "\n")
+
+
+class WindowsKeyboard:
+    """Keys sent to the control's window, as the message loop delivers them."""
+
+    WM_KEYDOWN = 0x0100
+    WM_KEYUP = 0x0101
+    WM_CHAR = 0x0102
+    VK_BACK = 0x08
+    VK_RETURN = 0x0D
+
+    def __init__(self, impl):
+        self.impl = impl
+        self.native = impl.native
+
+    def _send(self, message, wparam):
+        from ctypes import windll
+        from ctypes.wintypes import HWND
+
+        hwnd = HWND(self.native.Handle.ToInt64())
+        windll.user32.SendMessageW(hwnd, message, wparam, 0)
+
+    def _key(self, virtual_key, char):
+        self._send(self.WM_KEYDOWN, virtual_key)
+        self._send(self.WM_CHAR, ord(char))
+        self._send(self.WM_KEYUP, virtual_key)
+
+    def type(self, text):
+        for char in text:
+            self._send(self.WM_CHAR, ord(char))
+
+    def enter(self):
+        self._key(self.VK_RETURN, "\r")
+
+    def backspace(self):
+        self._key(self.VK_BACK, "\b")
+
+    def caret_to(self, index):
+        self.native.Select(index, 0)
+
+    def control(self, key):
+        # A sent message cannot carry the Control key's state, which Winforms reads
+        # from the keyboard, so the key event goes to the console's handler.
+        import System.Windows.Forms as WinForms
+
+        keys = {"c": WinForms.Keys.C, "d": WinForms.Keys.D}[key]
+        self.impl.winforms_key_down(
+            self.native, WinForms.KeyEventArgs(keys | WinForms.Keys.Control)
+        )
+
+    def text(self):
+        return str(self.native.Text).replace("\r\n", "\n").replace("\r", "\n")

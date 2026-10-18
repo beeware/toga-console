@@ -3,6 +3,7 @@ from contextlib import contextmanager
 from ctypes import WINFUNCTYPE, c_wchar_p, windll
 from ctypes.wintypes import HWND, LPARAM, UINT, WPARAM
 
+import System.Windows.Forms as WinForms
 from System.Drawing import Font, FontStyle
 from toga.handlers import WeakrefCallable
 from toga_winforms.colors import native_color
@@ -23,27 +24,45 @@ EM_GETFIRSTVISIBLELINE = 0x00CE
 EM_SETUNDOLIMIT = 0x0452
 
 
+# The console's control keys, by the key pressed with Control.
+CONTROL_KEYS = {WinForms.Keys.C: "\x03", WinForms.Keys.D: "\x04"}
+
+
 def utf16_length(text):
     # Rich edit positions count UTF-16 code units, so an astral character is two.
     return len(text.encode("utf-16-le", "surrogatepass")) // 2
 
 
 class Console(MultilineTextInput):
+    """The text is the output, then the input area: what the user is typing.
+
+    ``length`` is the output's length, so the input area starts there. The output
+    calls edit only the text before it, and the key handlers let the user edit only
+    the text after it.
+    """
+
     def create(self):
         super().create()
         native = self.native
         native.ReadOnly = True
         native.DetectUrls = False  # console output is not a document
         native.HandleCreated += WeakrefCallable(self.winforms_handle_created)
+        native.KeyDown += WeakrefCallable(self.winforms_key_down)
+        native.KeyPress += WeakrefCallable(self.winforms_key_press)
         self._disable_undo()
 
-        # The view's text is never read back: each committed line's length, in
+        # The output's text is never read back: each committed line's length, in
         # positions, is kept here instead, so the tail and a trim are found without
         # copying the whole text out of the control.
         self.line_lengths = deque()
         self.tail_length = 0
         self.length = 0
         self.fonts = {}
+        self.input_readonly = True
+
+    @property
+    def output_length(self):
+        return self.length
 
     def winforms_handle_created(self, sender, event):
         self._disable_undo()  # the setting belongs to the native window
@@ -57,8 +76,12 @@ class Console(MultilineTextInput):
 
     # Inherited methods that must keep the console's state in sync
 
+    def get_readonly(self):
+        return self.input_readonly
+
     def set_readonly(self, value):
-        self.native.ReadOnly = True  # a console is never editable
+        self.input_readonly = bool(value)
+        self.native.ReadOnly = self.input_readonly
 
     def winforms_text_changed(self, sender, event):
         # The edits below fire TextChanged; the interface reports its own on_change
@@ -66,8 +89,7 @@ class Console(MultilineTextInput):
         pass
 
     def get_value(self):
-        # The model's text has no carriage returns, so any here are line breaks.
-        return super().get_value().replace("\r\n", "\n").replace("\r", "\n")
+        return self._text(0, self.length)
 
     def scale_font(self):
         super().scale_font()
@@ -128,13 +150,21 @@ class Console(MultilineTextInput):
         selection_start = native.SelectionStart
         selection_end = selection_start + native.SelectionLength
         self.first_line = SendMessage(hwnd, EM_GETFIRSTVISIBLELINE, 0, 0)
-        self.deletions = []
+        # In order: (start, end) for a deletion, (position, -length) for an insertion.
+        self.edits = []
         try:
             yield
         finally:
-            for start, end in self.deletions:
-                selection_start = shift(selection_start, start, end)
-                selection_end = shift(selection_end, start, end)
+            for start, end in self.edits:
+                if end < 0:
+                    # Output goes in at the start of the input, so a caret there
+                    # moves along with the input.
+                    pushed = not self.input_readonly
+                    selection_start = shift_insert(selection_start, start, -end, pushed)
+                    selection_end = shift_insert(selection_end, start, -end, pushed)
+                else:
+                    selection_start = shift(selection_start, start, end)
+                    selection_end = shift(selection_end, start, end)
             native.Select(selection_start, selection_end - selection_start)
             moved = self.first_line - SendMessage(hwnd, EM_GETFIRSTVISIBLELINE, 0, 0)
             if moved:
@@ -154,7 +184,7 @@ class Console(MultilineTextInput):
         # ignores. EM_REPLACESEL is not blocked by read-only, and 0 keeps it out of
         # the undo buffer.
         SendStringMessage(self._hwnd(), EM_REPLACESEL, 0, "")
-        self.deletions.append((start, end))
+        self.edits.append((start, end))
         self.length -= end - start
 
     def _append(self, text, font, color):
@@ -163,13 +193,123 @@ class Console(MultilineTextInput):
         native.SelectionFont = font
         native.SelectionColor = color
         native.SelectedText = text
-        self.length += utf16_length(text)
+        length = utf16_length(text)
+        self.edits.append((self.length, -length))
+        self.length += length
 
     def _update_placeholder(self):
         # The base shows its placeholder as the control's own text, and only from
         # set_value, which the console never calls.
-        if not self.length and not self.native.ContainsFocus:
+        if not self.native.TextLength and not self.native.ContainsFocus:
             self._set_placeholder_visible(True)
+
+    # Typing
+
+    def winforms_key_down(self, sender, event):
+        """Handle the keys that edit without a character: Delete, paste, and cut."""
+        if self.input_readonly:
+            return  # Ctrl-C copies as usual
+        native = self.native
+        start = native.SelectionStart
+        end = start + native.SelectionLength
+        output_end = self.length
+        key, modifiers = event.KeyCode, event.Modifiers
+        Keys = WinForms.Keys
+        char = CONTROL_KEYS.get(key)
+        if char is not None and modifiers == Keys.Control:
+            self.interface._enter_control(char)
+            suppress(event)
+        elif (key == Keys.V and modifiers == Keys.Control) or (
+            key == Keys.Insert and modifiers == Keys.Shift
+        ):
+            if WinForms.Clipboard.ContainsText():
+                self._edit(str(WinForms.Clipboard.GetText()))
+            suppress(event)
+        elif (
+            key == Keys.Delete
+            or (key == Keys.X and modifiers == Keys.Control)
+            or (key == Keys.Back and start != end)
+        ):
+            if start < output_end:
+                suppress(event)  # it would delete output
+        elif key == Keys.Back:
+            if start <= output_end:
+                suppress(event)  # nothing before the caret belongs to the input
+            elif modifiers == Keys.Control:
+                # A word deletion stops at the start of the input.
+                word = self._text(output_end, start).rstrip()
+                if not any(char.isspace() for char in word):
+                    self._delete_input(output_end, start)
+                    suppress(event)
+
+    def winforms_key_press(self, sender, event):
+        """Handle typed characters: Return, Backspace, and text."""
+        if self.input_readonly:
+            return
+        char = str(event.KeyChar)
+        native = self.native
+        start = native.SelectionStart
+        end = start + native.SelectionLength
+        output_end = self.length
+        if char in "\r\n":
+            event.Handled = True
+            self._edit("\n")
+        elif char == "\b":
+            # Normally refused already, in KeyDown.
+            if start < output_end or (start == end == output_end):
+                event.Handled = True
+        elif char in "\x03\x04":
+            event.Handled = True  # sent from KeyDown
+        elif char.isprintable():
+            if start < output_end:
+                # Typed with the caret in the output: it belongs at the end of the
+                # input.
+                event.Handled = True
+                self._edit(char)
+            else:
+                # Typed text is plain, whatever the output it follows was drawn in.
+                native.SelectionFont = native.Font
+                native.SelectionColor = self._color
+
+    def _edit(self, text):
+        """Type ``text`` at the caret, entering every line it completes."""
+        native = self.native
+        start = native.SelectionStart
+        end = start + native.SelectionLength
+        output_end = self.length
+        text_end = native.TextLength
+        if start < output_end:
+            start = end = text_end
+        before = self._text(output_end, start)
+        after = self._text(end, text_end)
+        text = before + text + after
+        if "\n" in text or "\r" in text:
+            text = self.interface._enter_input(text)
+        self._set_input(text, utf16_length(text) - utf16_length(after))
+
+    def _delete_input(self, start, end):
+        native = self.native
+        native.Select(start, end - start)
+        native.SelectedText = ""
+
+    def _set_input(self, text, caret):
+        native = self.native
+        start = self.length
+        native.Select(start, native.TextLength - start)
+        native.SelectionFont = native.Font
+        native.SelectionColor = self._color
+        native.SelectedText = text
+        native.Select(start + caret, 0)
+        native.ScrollToCaret()
+
+    def _text(self, start, end):
+        """The text from ``start`` to ``end``, in rich edit positions."""
+        if self._placeholder_visible:
+            return ""
+        # The control writes each line break as one position, "\n" in Text.
+        text = str(self.native.Text).replace("\r\n", "\n").replace("\r", "\n")
+        units = text.encode("utf-16-le", "surrogatepass")
+        return units[2 * start : 2 * end].decode("utf-16-le", "surrogatepass")
 
     # Styles
 
@@ -193,6 +333,22 @@ class Console(MultilineTextInput):
     def _run_color(self, style):
         # MultilineTextInput keeps the widget's own text colour in _color.
         return self._color if style.color is None else native_color(style.color)
+
+
+def suppress(event):
+    """Stop a key press from reaching the control, and its character too."""
+    event.Handled = True
+    event.SuppressKeyPress = True
+
+
+def shift_insert(position, at, length, pushed):
+    """Where ``position`` lands once ``length`` positions go in at ``at``.
+
+    A position at ``at`` itself moves only if ``pushed``.
+    """
+    if position > at or (position == at and pushed):
+        return position + length
+    return position
 
 
 def shift(position, start, end):
