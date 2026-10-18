@@ -5,25 +5,41 @@ from __future__ import annotations
 import asyncio
 import codecs
 import warnings
-import weakref
 from collections.abc import Mapping
 from functools import cached_property
-from typing import Any
+from typing import Any, Protocol
 
 import toga
 from toga.fonts import MONOSPACE
+from toga.handlers import wrapped_handler
 from toga.platform import get_factory
 from toga.widgets.base import StyleT
 from toga.widgets.multilinetextinput import OnChangeHandler
 
 from .model import DEFAULT_MAX_LINES, PLAIN, Scrollback, Stream, Style
 from .sources import Attachment, start_pump
-from .stdin import InputPipe
 
 FLUSH_INTERVAL = 0.05
 """Seconds between a write and the display update that shows it."""
 
 DEFAULT_STYLES: Mapping[str, Style] = {"stderr": Style(color="red")}
+
+
+ETX = "\x03"
+"""What Ctrl-C sends: End of Text."""
+EOT = "\x04"
+"""What Ctrl-D sends: End of Transmission."""
+
+
+class OnInputHandler(Protocol):
+    def __call__(self, widget: Console, data: bytes, **kwargs: Any) -> object:
+        """A handler to invoke with the bytes the user enters into the console.
+
+        :param widget: The console the bytes were entered into.
+        :param data: The bytes: one or more lines, each ending with ``b"\\n"``, or a
+            single control byte, ``b"\\x03"`` for Ctrl-C or ``b"\\x04"`` for Ctrl-D.
+        :param kwargs: Ensures compatibility with arguments added in future versions.
+        """
 
 
 class Console(toga.MultilineTextInput):
@@ -40,6 +56,7 @@ class Console(toga.MultilineTextInput):
         readonly: bool = True,
         placeholder: str | None = None,
         on_change: OnChangeHandler | None = None,
+        on_input: OnInputHandler | None = None,
         **kwargs,
     ):
         """Create a new console.
@@ -55,10 +72,12 @@ class Console(toga.MultilineTextInput):
             default, which draws ``stderr`` in red.
         :param readonly: Whether the console refuses typed input. When ``False``, the
             user can type after the last output; each line entered is echoed on
-            stream ``"stdin"`` and sent to :attr:`stdin`.
+            stream ``"stdin"`` and passed to ``on_input``.
         :param placeholder: The content to display when the console is empty.
         :param on_change: A handler invoked once per display update that changed
             what is shown.
+        :param on_input: A handler invoked with the bytes the user enters: each line
+            on Enter, and a single control byte for Ctrl-C or Ctrl-D.
         :param kwargs: Initial style properties. Unless a font family is given here or
             on ``style``, the console uses a monospace font.
         """
@@ -83,7 +102,6 @@ class Console(toga.MultilineTextInput):
             self._styles.update(styles)
         self._follow = follow
         self._pending_flush: asyncio.Task | None = None
-        self._stdin: InputPipe | None = None
 
         super().__init__(
             id=id,
@@ -94,6 +112,7 @@ class Console(toga.MultilineTextInput):
             on_change=on_change,
             **kwargs,
         )
+        self.on_input = on_input
 
     @cached_property
     def factory(self):
@@ -215,20 +234,22 @@ class Console(toga.MultilineTextInput):
         return self._styles
 
     @property
-    def stdin(self) -> int:
-        """The read end of a pipe that receives each line typed into the console.
+    def on_input(self) -> OnInputHandler:
+        """The handler invoked with the bytes the user enters into the console.
 
-        A file descriptor, created on first use, that anything taking a descriptor
-        can read: pass it as a subprocess's ``stdin``, read it from a thread, or
-        watch it on the loop. Each line arrives encoded with the console's encoding
-        and ends with ``"\n"``. Lines typed before anything reads wait in the pipe.
-        The console owns the descriptor and closes it when the console is garbage
-        collected; do not close it yourself.
+        Typed text is delivered when Enter is pressed, as the line plus ``b"\\n"``;
+        a paste delivers its complete lines at once. Ctrl-C delivers ``b"\\x03"``
+        and Ctrl-D ``b"\\x04"`` at once, leaving a half-typed line in place. The
+        console gives these bytes no meaning of its own: the handler decides what
+        they do, such as writing them to a subprocess's stdin, closing it on
+        Ctrl-D, or sending it ``SIGINT`` on Ctrl-C. Text is encoded with the
+        console's encoding. A read-only console delivers nothing.
         """
-        if self._stdin is None:
-            self._stdin = InputPipe()
-            weakref.finalize(self, self._stdin.close)
-        return self._stdin.read_fd
+        return self._on_input
+
+    @on_input.setter
+    def on_input(self, handler: OnInputHandler | None) -> None:
+        self._on_input = wrapped_handler(self, handler)
 
     # Internals
 
@@ -243,17 +264,24 @@ class Console(toga.MultilineTextInput):
         """Take the text in the console's input area from the backend.
 
         The backend calls this when the input area's text would contain a line
-        break: on Enter, or on a paste. Every complete line is echoed on stream
-        ``"stdin"`` and sent to :attr:`stdin`, and the display is updated at once.
-        Returns the text after the last line break, which stays in the input area.
+        break: on Enter, or on a paste. The complete lines are echoed on stream
+        ``"stdin"``, the display is updated at once, and then they are passed to
+        ``on_input`` together. Returns the text after the last line break, which
+        stays in the input area.
         """
         *lines, rest = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
-        for line in lines:
-            self.write(line + "\n", stream="stdin")
-            if self._stdin is not None:
-                self._stdin.write((line + "\n").encode(self._encoding, self._errors))
-        self.flush()
+        if lines:
+            entered = "".join(line + "\n" for line in lines)
+            self.write(entered, stream="stdin")
+            self.flush()
+            self.on_input(data=entered.encode(self._encoding, self._errors))
         return rest
+
+    def _enter_control(self, char: str) -> None:
+        """Pass a control key's byte to ``on_input``; the backend calls this."""
+        if char not in (ETX, EOT):
+            raise ValueError(f"not a console control key: {char!r}")
+        self.on_input(data=char.encode("ascii"))
 
     def _schedule_flush(self) -> None:
         if self._pending_flush is not None:

@@ -1,16 +1,28 @@
 from contextlib import contextmanager
+from ctypes import c_void_p
 
-from rubicon.objc import NSObject, NSRange, ObjCInstance, objc_method, objc_property
+from rubicon.objc import (
+    NSObject,
+    NSRange,
+    ObjCInstance,
+    objc_method,
+    objc_property,
+    send_super,
+)
 from toga_cocoa.colors import native_color
 from toga_cocoa.libs import (
     NSAttributedString,
+    NSBezelBorder,
     NSColor,
     NSFontAttributeName,
     NSFontManager,
     NSForegroundColorAttributeName,
     NSMutableDictionary,
+    NSScrollView,
+    NSViewHeightSizable,
+    NSViewWidthSizable,
 )
-from toga_cocoa.widgets.multilinetextinput import MultilineTextInput
+from toga_cocoa.widgets.multilinetextinput import MultilineTextInput, TogaTextView
 
 from ..model import PLAIN
 
@@ -22,11 +34,42 @@ NSItalicFontMask = 1 << 0
 NSBoldFontMask = 1 << 1
 # NSNotFound is NSIntegerMax.
 NSNotFound = 0x7FFFFFFFFFFFFFFF
+# NSEventModifierFlags
+NSEventModifierFlagShift = 1 << 17
+NSEventModifierFlagControl = 1 << 18
+NSEventModifierFlagOption = 1 << 19
+NSEventModifierFlagCommand = 1 << 20
+CHORD_FLAGS = (
+    NSEventModifierFlagShift
+    | NSEventModifierFlagControl
+    | NSEventModifierFlagOption
+    | NSEventModifierFlagCommand
+)
 
 
 def utf16_length(text):
     """The length of ``text`` as NSString counts it."""
     return len(text.encode("utf-16-le")) // 2
+
+
+# The console's control keys, by the key pressed with Control.
+CONTROL_KEYS = {"c": "\x03", "d": "\x04"}
+
+
+class TogaConsoleTextView(TogaTextView):
+    """Sends Ctrl-C and Ctrl-D to the console instead of NSTextView's bindings.
+
+    NSTextView binds Ctrl-D to deleting forward and Ctrl-C to nothing.
+    """
+
+    @objc_method
+    def keyDown_(self, event) -> None:
+        if event.modifierFlags & CHORD_FLAGS == NSEventModifierFlagControl:
+            char = CONTROL_KEYS.get(str(event.charactersIgnoringModifiers))
+            if char is not None:
+                self.impl.control(char)
+                return
+        send_super(__class__, self, "keyDown:", event, argtypes=[c_void_p])
 
 
 class TogaConsoleDelegate(NSObject):
@@ -61,8 +104,25 @@ class Console(MultilineTextInput):
     """
 
     def create(self):
-        super().create()
-        text = self.native_text
+        # Toga's create(), with the text view that catches Ctrl-C and Ctrl-D.
+        self.native = NSScrollView.alloc().init()
+        self.native.hasVerticalScroller = True
+        self.native.hasHorizontalScroller = False
+        self.native.autohidesScrollers = False
+        self.native.borderType = NSBezelBorder
+
+        text = self.native_text = TogaConsoleTextView.alloc().init()
+        text.interface = self.interface
+        text.impl = self
+        text.verticallyResizable = True
+        text.horizontallyResizable = False
+        text.usesAdaptiveColorMappingForDarkAppearance = True
+        text.setAutomaticQuoteSubstitutionEnabled(False)
+        text.setAutomaticDashSubstitutionEnabled(False)
+        text.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable
+        self.native.documentView = text
+        self.add_constraints()
+
         text.editable = False
         text.selectable = True
         text.allowsUndo = False
@@ -73,8 +133,8 @@ class Console(MultilineTextInput):
         text.setAutomaticTextReplacementEnabled(False)
         text.setAutomaticTextCompletionEnabled(False)
 
-        # The view is not its own delegate any more, so typing does not fire on_change,
-        # which reports output.
+        # The delegate is a separate object, so TogaTextView's textDidChange_ never
+        # runs and typing does not fire on_change, which reports output.
         self.delegate = TogaConsoleDelegate.alloc().init()
         self.delegate.impl = self
         text.delegate = self.delegate
@@ -196,6 +256,10 @@ class Console(MultilineTextInput):
             text = self.interface._enter_input(text)
         self._set_input(text, utf16_length(text) - utf16_length(after))
         return False
+
+    def control(self, char):
+        if not self.input_readonly:
+            self.interface._enter_control(char)
 
     def _set_input(self, text, caret):
         storage = self.native_text.textStorage

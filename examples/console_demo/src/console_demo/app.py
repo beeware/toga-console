@@ -1,7 +1,7 @@
 """Console Demo: feeds the toga-console widget from a burst, a pipe, and a subprocess.
 
-The REPL button starts a Python REPL inside the app that reads the lines typed into
-the console from ``Console.stdin``.
+The REPL button starts a Python REPL inside the app, fed with the bytes the
+console's ``on_input`` handler receives: typed lines, Ctrl-C, and Ctrl-D.
 
 The self-test runs at startup and from its button: it writes the burst directly,
 then streams the same bytes through an OS pipe until the pipe's attachment sees
@@ -10,7 +10,8 @@ expected text. It then trims the console to seven lines and compares the native
 view's text with the model's text and with the last seven expected lines. The
 verdict is printed as ``SELFTEST OK`` or ``SELFTEST FAIL`` so a log reader can
 check a backend without eyes on the screen. On macOS the self-test then types
-``6 * 7`` into the native view, as a user would, and checks that the REPL answers.
+``6 * 7`` into the native view, as a user would, and checks that the REPL answers,
+that Ctrl-C interrupts a busy loop and a prompt, and that Ctrl-D ends the REPL.
 """
 
 import asyncio
@@ -62,7 +63,12 @@ CHILD_SCRIPT = (
 
 class ConsoleDemo(toga.App):
     def startup(self):
-        self.console = Console(flex=1, readonly=False, placeholder="Press a button.")
+        self.console = Console(
+            flex=1,
+            readonly=False,
+            placeholder="Press a button.",
+            on_input=self.on_input,
+        )
         self.repl = None
         self.result = toga.Label("", flex=1)
         self.follow = toga.Switch("Follow", value=True, on_change=self.set_follow)
@@ -149,6 +155,10 @@ class ConsoleDemo(toga.App):
     def _repl_ended(self, future):
         self.repl = None
 
+    def on_input(self, widget, data, **kwargs):
+        if self.repl is not None:
+            self.repl.feed(data)
+
     def clear(self, widget=None, **kwargs):
         self.console.clear()
 
@@ -158,17 +168,37 @@ class ConsoleDemo(toga.App):
     async def run_self_test(self, widget=None, **kwargs):
         await self.self_test()
 
-    async def stdin_test(self):
-        """Type into the native view and check the REPL's answer; None if untested."""
+    async def input_test(self):
+        """Type into the native view and check the REPL's answers; None if untested."""
         if current_platform != "macOS":
             return None  # typing into the view is only simulated on macOS so far
+        from rubicon.objc import NSPoint, NSRange, ObjCClass
+
         native = self.console._impl.native_text
+
+        def press_control(key, key_code):
+            native.keyDown(
+                ObjCClass("NSEvent").keyEventWithType(
+                    10,  # NSEventTypeKeyDown
+                    location=NSPoint(0, 0),
+                    modifierFlags=1 << 18,  # NSEventModifierFlagControl
+                    timestamp=0.0,
+                    windowNumber=0,
+                    context=None,
+                    characters=chr(ord(key) - ord("a") + 1),
+                    charactersIgnoringModifiers=key,
+                    isARepeat=False,
+                    keyCode=key_code,
+                )
+            )
+
+        def ends(text):
+            return lambda: self.console.value.endswith(text)
+
         self.console.clear()
         repl = self.start_repl()
-        if not await until(lambda: self.console.value.endswith(">>> ")):
+        if not await until(ends(">>> ")):
             return False
-        from rubicon.objc import NSRange
-
         # Typed before the prompt reaches the view: the input area must stay after
         # the output once it arrives.
         native.insertText("6 * ")
@@ -180,14 +210,29 @@ class ConsoleDemo(toga.App):
         native.setSelectedRange(NSRange(0, 0))
         native.insertText("7")
         native.insertNewline(None)  # what Return sends
-        answered = await until(lambda: ">>> 6 * 7\n42\n>>> " in self.console.value)
-        native.insertText("exit()\n")
+        answered = await until(ends(">>> 6 * 7\n42\n>>> "))
+
+        # Ctrl-C interrupts running code...
+        native.insertText("while True: pass")
+        native.insertNewline(None)
+        native.insertNewline(None)  # the blank line that ends the block
+        await asyncio.sleep(0.3)
+        press_control("c", 8)
+        busy_interrupted = await until(ends("KeyboardInterrupt\n>>> "))
+        # ...and a prompt.
+        press_control("c", 8)
+        prompt_interrupted = await until(ends(">>> \nKeyboardInterrupt\n>>> "))
+
+        # Ctrl-D at the prompt is the end of input.
+        press_control("d", 2)
         ended = await until(lambda: repl.done.done())
         self.console.flush()
         return (
             answered
+            and busy_interrupted
+            and prompt_interrupted
             and ended
-            and self.console.value.endswith(">>> exit()\nREPL ended.\n")
+            and self.console.value.endswith(">>> \nREPL ended.\n")
             and self.console._impl.get_value() == self.console.value
             and str(native.string) == self.console.value  # nothing left in the input
         )
@@ -214,14 +259,14 @@ class ConsoleDemo(toga.App):
         trimmed_model = self.console.value
         self.console.max_lines = DEFAULT_MAX_LINES
         ok = ok and trimmed_native == trimmed_model == TRIMMED
-        stdin_ok = await self.stdin_test()
-        ok = ok and stdin_ok is not False
+        input_ok = await self.input_test()
+        ok = ok and input_ok is not False
         verdict = "OK" if ok else "FAIL"
         self.result.text = f"Self-test {verdict}"
         print(
             f"SELFTEST {verdict} native={native!r} model={model!r} "
             f"trimmed_native={trimmed_native!r} trimmed_model={trimmed_model!r} "
-            f"pipe_done={pipe_done} stdin_ok={stdin_ok}",
+            f"pipe_done={pipe_done} input_ok={input_ok}",
             flush=True,
         )
 

@@ -47,7 +47,7 @@ Anything running on the event loop can also call `console.write(data, stream="st
 
 | Member | Meaning |
 |---|---|
-| `Console(id=None, style=None, *, max_lines=2000, encoding="utf-8", errors="replace", follow=True, styles=None, readonly=True, placeholder=None, on_change=None, **style_properties)` | Selectable, and monospace unless a font family is given. With `readonly=False`, the user can type after the last output; see [Input](#input). |
+| `Console(id=None, style=None, *, max_lines=2000, encoding="utf-8", errors="replace", follow=True, styles=None, readonly=True, placeholder=None, on_change=None, on_input=None, **style_properties)` | Selectable, and monospace unless a font family is given. With `readonly=False`, the user can type after the last output; see [Input](#input). |
 | `write(data, *, stream="stdout")` | Append bytes or text on a named stream. Each stream has its own decoder and escape parser; all streams share one cursor and scrollback. |
 | `attach(source, *, stream="stdout")` | Read a source until it ends: an `asyncio.StreamReader`, an async iterable of bytes or text, a file-like object with `fileno()`, or a file descriptor. Returns an `Attachment`. A regular file is read to its current end; on Android, descriptors are read on a helper thread so end-of-file arrives. On macOS and iOS the descriptor is switched to non-blocking for good; the widget never closes a descriptor it was given. |
 | `clear()` | Empty the scrollback and the display at once. |
@@ -56,8 +56,8 @@ Anything running on the event loop can also call `console.write(data, stream="st
 | `max_lines` | Committed lines kept; assigning trims at once. |
 | `follow` | Scroll to the newest output after each update. |
 | `readonly` | Whether typing is refused. |
-| `stdin` | A file descriptor: the read end of a pipe that receives each line typed into the console. Created on first use. |
 | `styles` | A dict from stream name to `Style`; by default `stderr` is red. A change applies to text written afterwards. |
+| `on_input` | Called as `on_input(widget, data)` with the bytes the user enters: the line on Return, `b"\x03"` on Ctrl-C, `b"\x04"` on Ctrl-D. See [Input](#input). |
 | `on_change` | Fires once per display update that changed what is shown; typing does not fire it. Use it to show a "new output" hint while the console is hidden. |
 | `Attachment` | `cancel()` stops the source; `await wait()` returns at its end or after cancel and raises the error the source raised; `done`, `error`, `stream`. |
 | `Style(color=None, bold=False, italic=False)` | `color` is any Toga colour value; `None` is the widget's own text colour. |
@@ -77,25 +77,45 @@ A line reaching 4096 characters is split, a sequence of 256 characters without i
 
 ## Input
 
-With `readonly=False`, the console accepts typing after the last output, the way a terminal does: Backspace stops at the output, and a key pressed with the caret in the output types at the end of the input. Output that arrives while you type goes in before your input, which stays where it is. Return enters the line: it is echoed into the scrollback on stream `"stdin"` (unstyled unless `styles` says otherwise) and written to `console.stdin`, encoded with the console's encoding. A paste of several lines enters each complete line.
+With `readonly=False`, the console accepts typing after the last output, the way a terminal does: Backspace stops at the output, and a key pressed with the caret in the output types at the end of the input. Output that arrives while you type goes in before your input, which stays where it is.
 
-`console.stdin` is an ordinary pipe descriptor, so anything that reads one can consume the input: a subprocess, a thread blocked in `readline`, or the event loop. Lines typed before anything reads them wait in the pipe, and lines typed before `stdin` is first used are only echoed. The console owns the pipe and closes it when the console is garbage collected; do not close it yourself.
+What the user enters reaches the `on_input` handler as bytes, encoded with the console's encoding:
+
+| Key | Delivered |
+|---|---|
+| Return | the line and `b"\n"`, after it is echoed into the scrollback on stream `"stdin"` (unstyled unless `styles` says otherwise) |
+| a paste with line breaks | all its complete lines in one call; the text after the last break stays in the input |
+| Ctrl-C | `b"\x03"`, at once; the line being typed stays |
+| Ctrl-D | `b"\x04"`, at once; the line being typed stays |
+
+The console gives these bytes no meaning of its own, and does not echo the control keys: the handler decides what they do. A handler should not assume that one call is one line. Feeding a subprocess:
 
 ```python
-console = Console(readonly=False)
 process = await asyncio.create_subprocess_exec(
     sys.executable,
     "-i",
     "-u",
-    stdin=console.stdin,
+    stdin=asyncio.subprocess.PIPE,
     stdout=asyncio.subprocess.PIPE,
     stderr=asyncio.subprocess.PIPE,
 )
+
+
+def on_input(widget, data, **kwargs):
+    if data == b"\x04":
+        process.stdin.close()  # end of input
+    elif data == b"\x03":
+        process.send_signal(signal.SIGINT)
+    else:
+        process.stdin.write(data)
+
+
+console = Console(readonly=False, on_input=on_input)
 console.attach(process.stdout)
 console.attach(process.stderr, stream="stderr")
 ```
 
-There is no end-of-input key yet: a pipe cannot signal end-of-file without closing for good. Typing is supported on macOS; on iOS and Android the console stays read-only for now. The demo app's REPL button runs a Python REPL inside the app, on a thread that reads `console.stdin`; see `examples/console_demo/src/console_demo/repl.py`.
+Typing is supported on macOS; on iOS and Android the console stays read-only for now. The demo app's REPL button runs a Python REPL inside the app, on a thread fed from `on_input`, where Ctrl-C raises `KeyboardInterrupt` and Ctrl-D at the prompt ends the REPL; see `examples/console_demo/src/console_demo/repl.py`.
 
 ## Threads
 
@@ -111,7 +131,7 @@ uv pip install -e . --group dev
 
 The test suite runs against Toga's dummy backend with warnings as errors, and requires 100% coverage of everything except the native backends. `.venv/bin/pre-commit install` runs the same lint and format checks as CI before each commit.
 
-The native backends are checked with the Briefcase app in `examples/console_demo`, which has a self-test that compares the native view's text with the model's, and on macOS types into the native view and checks the in-app REPL's answer:
+The native backends are checked with the Briefcase app in `examples/console_demo`, which has a self-test that compares the native view's text with the model's, and on macOS types into the native view and checks the in-app REPL's answers, its Ctrl-C, and its Ctrl-D:
 
 ```console
 cd examples/console_demo

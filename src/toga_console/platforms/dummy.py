@@ -45,3 +45,9 @@ class Console(MultilineTextInput):
         if "\n" in text or "\r" in text:
             text = self.interface._enter_input(text)
         self.input = text
+
+    def press_control(self, char):
+        """Press Ctrl-C (``"\x03"``) or Ctrl-D (``"\x04"``), as a user would."""
+        self._action("press control", char=char)
+        if not self.get_readonly():
+            self.interface._enter_control(char)
