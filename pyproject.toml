@@ -151,7 +151,7 @@ known-first-party = ["toga_console"]
 
 [tool.ruff.lint.per-file-ignores]
 # The module is named after the toga_iOS backend it implements.
-"src/toga_console/iOS_console.py" = ["N999"]
+"src/toga_console/platforms/iOS.py" = ["N999"]
 # The demo prints its self-test verdict to the log
 "examples/console_demo/src/console_demo/app.py" = ["T201"]
 
