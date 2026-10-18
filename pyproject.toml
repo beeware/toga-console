@@ -94,6 +94,7 @@ relative_files = true
 source_pkgs = ["toga_console"]
 omit = [
     "*/toga_console/platforms/cocoa.py",
+    "*/toga_console/platforms/textkit.py",
     "*/toga_console/platforms/iOS.py",
     "*/toga_console/platforms/android.py",
 ]

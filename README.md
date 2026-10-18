@@ -115,7 +115,7 @@ console.attach(process.stdout)
 console.attach(process.stderr, stream="stderr")
 ```
 
-Typing is supported on macOS; on iOS and Android the console stays read-only for now. The demo app's REPL button runs a Python REPL inside the app, on a thread fed from `on_input`, where Ctrl-C raises `KeyboardInterrupt` and Ctrl-D at the prompt ends the REPL; see `examples/console_demo/src/console_demo/repl.py`.
+Typing works on macOS, iOS, and Android. Ctrl-C and Ctrl-D come from a hardware keyboard; an on-screen keyboard has no Control key, so an app that needs them on a phone offers its own buttons, which can pass the same bytes to its handler. On Android, Ctrl-C in a console that takes input sends `b"\x03"` rather than copying; a read-only console copies as usual. The demo app's REPL button runs a Python REPL inside the app, on a thread fed from `on_input`, where Ctrl-C raises `KeyboardInterrupt` and Ctrl-D at the prompt ends the REPL; see `examples/console_demo/src/console_demo/repl.py`.
 
 ## Threads
 
@@ -131,7 +131,7 @@ uv pip install -e . --group dev
 
 The test suite runs against Toga's dummy backend with warnings as errors, and requires 100% coverage of everything except the native backends. `.venv/bin/pre-commit install` runs the same lint and format checks as CI before each commit.
 
-The native backends are checked with the Briefcase app in `examples/console_demo`, which has a self-test that compares the native view's text with the model's, and on macOS types into the native view and checks the in-app REPL's answers, its Ctrl-C, and its Ctrl-D:
+The native backends are checked with the Briefcase app in `examples/console_demo`, which has a self-test that compares the native view's text with the model's, and types into the native view and checks the in-app REPL's answers, its Ctrl-C, and its Ctrl-D:
 
 ```console
 cd examples/console_demo
