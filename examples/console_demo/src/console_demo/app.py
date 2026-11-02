@@ -65,7 +65,8 @@ class ConsoleDemo(toga.App):
             toga.Button("Self-test", on_press=self.run_self_test),
             toga.Button("Clear", on_press=self.clear),
         ]
-        if current_platform == "macOS":  # the phones cannot spawn a Python child
+        # The phones cannot spawn a Python child.
+        if current_platform in {"macOS", "linux"}:
             buttons.insert(2, toga.Button("Subprocess", on_press=self.subprocess))
 
         # Two rows so the controls fit a phone's width.

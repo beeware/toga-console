@@ -1,6 +1,6 @@
 # toga-console
 
-A [Toga](https://toga.readthedocs.io) widget that behaves like a console. Feed it bytes or text from anywhere: a subprocess's stdout and stderr, an OS pipe, an asyncio stream, a serial link. It decodes incrementally, honors carriage returns and backspaces, strips terminal escape sequences, keeps a bounded scrollback, and follows the newest output. Native backends for macOS, iOS, and Android, plus the dummy backend for tests.
+A [Toga](https://toga.readthedocs.io) widget that behaves like a console. Feed it bytes or text from anywhere: a subprocess's stdout and stderr, an OS pipe, an asyncio stream, a serial link. It decodes incrementally, honors carriage returns and backspaces, strips terminal escape sequences, keeps a bounded scrollback, and follows the newest output. Native backends for macOS, iOS, Android, Linux with GTK, and Qt, plus the dummy backend for tests.
 
 ## Install
 
@@ -8,7 +8,7 @@ A [Toga](https://toga.readthedocs.io) widget that behaves like a console. Feed i
 pip install toga-console
 ```
 
-or `pip install .` from a checkout.
+or `pip install .` from a checkout. The widget uses whichever Toga backend the app has installed; on Linux that is `toga-gtk` or `toga-qt`.
 
 ## Use
 
@@ -49,7 +49,7 @@ Anything running on the event loop can also call `console.write(data, stream="st
 |---|---|
 | `Console(id=None, style=None, *, max_lines=2000, encoding="utf-8", errors="replace", follow=True, styles=None, placeholder=None, on_change=None, **style_properties)` | Always read-only and selectable; monospace unless a font family is given. |
 | `write(data, *, stream="stdout")` | Append bytes or text on a named stream. Each stream has its own decoder and escape parser; all streams share one cursor and scrollback. |
-| `attach(source, *, stream="stdout")` | Read a source until it ends: an `asyncio.StreamReader`, an async iterable of bytes or text, a file-like object with `fileno()`, or a file descriptor. Returns an `Attachment`. A regular file is read to its current end; on Android, descriptors are read on a helper thread so end-of-file arrives. On macOS and iOS the descriptor is switched to non-blocking for good; the widget never closes a descriptor it was given. |
+| `attach(source, *, stream="stdout")` | Read a source until it ends: an `asyncio.StreamReader`, an async iterable of bytes or text, a file-like object with `fileno()`, or a file descriptor. Returns an `Attachment`. A regular file is read to its current end; on Android, descriptors are read on a helper thread so end-of-file arrives; everywhere else the descriptor is switched to non-blocking for good. The widget never closes a descriptor it was given. |
 | `clear()` | Empty the scrollback and the display at once. |
 | `flush()` | Apply pending output to the display now instead of after the 50 ms interval. |
 | `value` | The scrollback text. Assigning clears, then writes the text on `stdout`. |
@@ -73,6 +73,16 @@ Anything running on the event loop can also call `console.write(data, stream="st
 
 A line reaching 4096 characters is split, a sequence of 256 characters without its terminator is abandoned, and the oldest lines drop past `max_lines`. Long lines wrap at the view's width. Each stream's decoder and escape parser keep their state across writes, so a character or sequence may span two chunks. When an attachment ends and no other live attachment shares its stream, that stream's decoder and parser are reset, so a source that dies mid-sequence cannot swallow the next source's text.
 
+## Backend notes
+
+| Backend | Native view | Notes |
+|---|---|---|
+| macOS | `NSTextView` | |
+| iOS | `UITextView` | |
+| Android | `EditText` | |
+| GTK | `Gtk.TextView` | GTK 3 only. Toga's GTK 4 backend has no multiline text view yet, so the console raises an error under `TOGA_GTK=4`. |
+| Qt | `QPlainTextEdit` | Qt starts a new paragraph at U+2029 and at its frame markers U+FDD0 and U+FDD1, so the view draws them as U+2028 and U+FFFD to keep one paragraph per line. `value` still holds the text as written. |
+
 ## Threads
 
 `write` and every other method run on the event loop thread. From another thread, use `loop.call_soon_threadsafe(console.write, data)`. Sources given to `attach` are delivered to `write` on the loop; on Android a helper thread does the reading.
@@ -87,20 +97,30 @@ uv pip install -e . --group dev
 
 The test suite runs against Toga's dummy backend with warnings as errors, and requires 100% coverage of everything except the native backends. `.venv/bin/pre-commit install` runs the same lint and format checks as CI before each commit.
 
-The native backends are checked with the Briefcase app in `examples/console_demo`, which has a self-test that compares the native view's text with the model's:
+The native backends are checked with the Briefcase project in `examples/console_demo`. Its demo app has a self-test that compares the native view's text with the model's. The project has two apps: `console_demo` uses the platform's own backend, and `console_demo_qt` runs the same demo on Qt on any desktop platform:
 
 ```console
 cd examples/console_demo
-briefcase dev            # macOS
-briefcase run iOS        # iOS simulator
+briefcase dev -a console_demo        # macOS, or GTK on Linux
+briefcase dev -a console_demo_qt     # Qt
+briefcase run iOS -a console_demo    # iOS simulator
 ```
 
-On macOS and iOS the demo installs the widget straight from this repository; add `-r` after changing the widget source so Briefcase reinstalls it.
+On Linux, the GTK app needs [the system packages Toga's GTK backend needs](https://toga.readthedocs.io/en/stable/reference/platforms/linux/gtk.html).
+
+Add `--test` to `briefcase dev` to run the self-test as a test suite. It starts the demo, waits for the self-test's verdict, and fails unless the demo prints `SELFTEST OK`. CI runs it for GTK and for Qt under Ubuntu:
+
+```console
+briefcase dev -a console_demo --test
+briefcase dev -a console_demo_qt --test
+```
+
+On macOS, Linux, and iOS the demo installs the widget straight from this repository; add `-r` after changing the widget source so Briefcase reinstalls it.
 
 ```console
 uv build --wheel
 cd examples/console_demo
-briefcase run android -r
+briefcase run android -a console_demo -r
 ```
 
 Every user-visible change needs a fragment in `changes/`, named `<issue>.<kind>.md` where kind is `feature`, `bugfix`, `removal`, `doc`, or `misc`. Release notes are assembled with `towncrier build`.
