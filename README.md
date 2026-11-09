@@ -117,17 +117,6 @@ console.attach(process.stderr, stream="stderr")
 
 Typing works on every backend. Ctrl-C and Ctrl-D come from a hardware keyboard; an on-screen keyboard has no Control key, so an app that needs them on a phone offers its own buttons, which can pass the same bytes to its handler. Where Ctrl-C would copy (Android, GTK, Qt on Linux and Windows, and Windows), a console that takes input sends `b"\x03"` instead; a read-only console copies as usual. On macOS, Command-C copies either way. The demo app's REPL button runs a Python REPL inside the app, on a thread fed from `on_input`, where Ctrl-C raises `KeyboardInterrupt` and Ctrl-D at the prompt ends the REPL; see `examples/console_demo/src/console_demo/repl.py`.
 
-## Backend notes
-
-| Backend | Native view | Notes |
-|---|---|---|
-| macOS | `NSTextView` | |
-| iOS | `UITextView` | |
-| Android | `EditText` | |
-| GTK | `Gtk.TextView` | GTK 3 only. Toga's GTK 4 backend has no multiline text view yet, so the console raises an error under `TOGA_GTK=4`. |
-| Qt | `QPlainTextEdit` | Qt starts a new paragraph at U+2029 and at its frame markers U+FDD0 and U+FDD1, so the view draws them as U+2028 and U+FFFD to keep one paragraph per line. `value` still holds the text as written. |
-| Windows | `RichTextBox` | |
-
 ## Threads
 
 `write` and every other method run on the event loop thread. From another thread, use `loop.call_soon_threadsafe(console.write, data)`. Sources given to `attach` are delivered to `write` on the loop; on Android, and for a pipe on Windows, a helper thread does the reading.

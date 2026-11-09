@@ -80,7 +80,7 @@ class ConsoleDemo(toga.App):
             toga.Button("Clear", on_press=self.clear),
         ]
         # The phones cannot spawn a Python child.
-        if current_platform in {"macOS", "linux", "windows"}:
+        if current_platform not in {"iOS", "android"}:
             buttons.insert(2, toga.Button("Subprocess", on_press=self.subprocess))
 
         # Two rows so the controls fit a phone's width.
