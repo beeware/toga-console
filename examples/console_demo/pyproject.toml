@@ -10,7 +10,7 @@ dynamic = ["version"]
 name = "console_demo"
 
 [tool.briefcase]
-project_name = "Console Demo"
+project_name = "console_demo"
 bundle = "org.beeware.examples"
 url = "https://beeware.org"
 license = "BSD-3-Clause"
