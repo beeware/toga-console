@@ -73,16 +73,6 @@ Anything running on the event loop can also call `console.write(data, stream="st
 
 A line reaching 4096 characters is split, a sequence of 256 characters without its terminator is abandoned, and the oldest lines drop past `max_lines`. Long lines wrap at the view's width. Each stream's decoder and escape parser keep their state across writes, so a character or sequence may span two chunks. When an attachment ends and no other live attachment shares its stream, that stream's decoder and parser are reset, so a source that dies mid-sequence cannot swallow the next source's text.
 
-## Backend notes
-
-| Backend | Native view | Notes |
-|---|---|---|
-| macOS | `NSTextView` | |
-| iOS | `UITextView` | |
-| Android | `EditText` | |
-| GTK | `Gtk.TextView` | GTK 3 only. Toga's GTK 4 backend has no multiline text view yet, so the console raises an error under `TOGA_GTK=4`. |
-| Qt | `QPlainTextEdit` | Qt starts a new paragraph at U+2029 and at its frame markers U+FDD0 and U+FDD1, so the view draws them as U+2028 and U+FFFD to keep one paragraph per line. `value` still holds the text as written. |
-
 ## Threads
 
 `write` and every other method run on the event loop thread. From another thread, use `loop.call_soon_threadsafe(console.write, data)`. Sources given to `attach` are delivered to `write` on the loop; on Android a helper thread does the reading.
