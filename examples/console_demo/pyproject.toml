@@ -23,7 +23,7 @@ description = "A demo of the toga-console widget."
 # first), because Gradle rejects a path requirement whose directory contains the
 # Android build tree.
 requires = []
-# `briefcase dev --test` runs the self-test; see tests/test_selftest.py.
+
 test_sources = ["tests"]
 test_requires = ["pytest"]
 
@@ -38,8 +38,6 @@ requires = [
     "std-nslog >= 1.0.0",
 ]
 
-# Toga refuses to guess when both Linux backends are installed, so this app uses GTK;
-# the console_demo_qt app below runs the same demo on Qt.
 [tool.briefcase.app.console_demo.linux]
 requires = [
     "../..",
@@ -76,9 +74,6 @@ build_gradle_dependencies = [
 [tool.setuptools_scm]
 root = "../../"
 
-# The same demo on Qt, on any desktop platform: `briefcase dev -a console_demo_qt`.
-# PySide6 comes from its wheels, so the app also runs in a venv whose Python has no
-# system PySide6, as in CI.
 [tool.briefcase.app.console_demo_qt]
 formal_name = "Console Demo"
 sources = [

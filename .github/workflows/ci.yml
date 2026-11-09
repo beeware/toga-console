@@ -114,26 +114,31 @@ jobs:
       run: tox -qe coverage$(tr -dc "0-9" <<< "${{ matrix.python-version }}")
 
   native-tests:
-    name: Self-test on ${{ matrix.backend }}
+    name: Self-test (${{ matrix.backend }})
     needs: [ pre-commit ]
     runs-on: ${{ matrix.runs-on }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - backend: GTK
+          - backend: Cocoa
+            runs-on: macos-26
             app: console_demo
+          - backend: GTK
             runs-on: ubuntu-24.04
             system-packages: pkg-config libcairo2-dev libgirepository-2.0-dev gir1.2-gtk-3.0 xvfb
+            app: console_demo
+            run-prefix: xvfb-run -a
           - backend: Qt
-            app: console_demo_qt
             runs-on: ubuntu-24.04
+            app: console_demo_qt
             system-packages: >-
               libegl1 libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-keysyms1
               libxcb-randr0 libxcb-render-util0 libxcb-shape0 libxcb-xinerama0 xvfb
+            run-prefix: xvfb-run -a
           - backend: Windows
-            app: console_demo
             runs-on: windows-latest
+            app: console_demo
 
     steps:
     - name: Checkout
@@ -148,7 +153,7 @@ jobs:
         python-version: "3.13"
 
     - name: Install system packages
-      if: runner.os == 'Linux'
+      if: ${{ matrix.runs-on == 'ubuntu-24.04' }}
       env:
         SYSTEM_PACKAGES: ${{ matrix.system-packages }}
       run: |
@@ -169,12 +174,7 @@ jobs:
         # A failing verdict quotes the console's text, emoji included, and Windows
         # would otherwise write it in the ANSI code page.
         PYTHONUTF8: "1"
-      run: |
-        if [ "$RUNNER_OS" = "Linux" ]; then
-          xvfb-run -a briefcase dev -a "$APP" --test --no-input
-        else
-          briefcase dev -a "$APP" --test --no-input
-        fi
+      run: ${{ matrix.run-prefix }} briefcase dev -a "$APP" --test --no-input
 
   coverage:
     name: Project coverage
