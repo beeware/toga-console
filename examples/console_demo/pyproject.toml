@@ -10,7 +10,7 @@ dynamic = ["version"]
 name = "console_demo"
 
 [tool.briefcase]
-project_name = "Console Demo"
+project_name = "console_demo"
 bundle = "org.beeware.examples"
 url = "https://beeware.org"
 license = "BSD-3-Clause"
@@ -18,9 +18,10 @@ license-files = ["../../LICENSE"]
 author = "Kattni"
 author_email = "hello@kattni.com"
 description = "A demo of the toga-console widget."
-# macOS, Linux, and iOS install the widget from this repository; Android installs it
-# from a built wheel (run `uv build --wheel` from the repository root first), because
-# Gradle rejects a path requirement whose directory contains the Android build tree.
+# macOS, Linux, Windows, and iOS install the widget from this repository; Android
+# installs it from a built wheel (run `uv build --wheel` from the repository root
+# first), because Gradle rejects a path requirement whose directory contains the
+# Android build tree.
 requires = []
 
 test_sources = ["tests"]
@@ -41,6 +42,12 @@ requires = [
 requires = [
     "../..",
     "toga-gtk ~= 0.5.7",
+]
+
+[tool.briefcase.app.console_demo.windows]
+requires = [
+    "../..",
+    "toga-winforms ~= 0.5.7",
 ]
 
 [tool.briefcase.app.console_demo.iOS]

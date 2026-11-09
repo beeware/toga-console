@@ -19,7 +19,9 @@ def test_selftest():
     # CONSOLE_DEMO_EXIT makes it exit once the self-test has printed its verdict.
     result = subprocess.run(
         [sys.executable, "-m", os.environ["CONSOLE_DEMO_MODULE"]],
-        env={**os.environ, "CONSOLE_DEMO_EXIT": "1"},
+        # The verdict quotes the console's text, emoji included, so the demo must
+        # print UTF-8 even where its default is the ANSI code page, as on Windows.
+        env={**os.environ, "CONSOLE_DEMO_EXIT": "1", "PYTHONIOENCODING": "utf-8"},
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         encoding="utf-8",
