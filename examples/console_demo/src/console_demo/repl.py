@@ -1,11 +1,12 @@
-"""A Python REPL that runs inside the app, fed by the bytes a console's on_input gets.
+"""A Python REPL that runs inside the app, fed by the bytes a console's on_input
+gets.
 
 The REPL runs on its own thread, so code that blocks does not freeze the window.
-The app passes each ``on_input`` delivery to :meth:`ConsoleRepl.feed`, and the
+The app passes each `on_input` delivery to :meth:`ConsoleRepl.feed`, and the
 REPL gives the bytes the meaning a terminal would: lines are its input, Ctrl-C
-(``b"\\x03"``) raises ``KeyboardInterrupt``, and Ctrl-D (``b"\\x04"``) is the end of
-input, which ends the REPL at its prompt. Prompts and output go back to the console
-through the event loop.
+(`b"\\x03"`) raises `KeyboardInterrupt`, and Ctrl-D (`b"\\x04"`) is the end of
+input, which ends the REPL at its prompt. Prompts and output go back to the
+console through the event loop.
 """
 
 import asyncio
@@ -24,9 +25,9 @@ END = object()  # the end of input, queued where Ctrl-D was pressed
 
 
 class ThreadRouted:
-    """A stand-in for ``sys.stdout`` or ``sys.stdin`` that serves one thread itself.
+    """A stand-in for `sys.stdout` or `sys.stdin` that serves one thread itself.
 
-    The REPL thread's ``print`` and ``input`` reach the console; every other thread
+    The REPL thread's `print` and `input` reach the console; every other thread
     keeps the stream it had.
     """
 
@@ -68,7 +69,7 @@ class ThreadRouted:
 
 
 class Exit:
-    """``exit()`` and ``quit()`` for the REPL: leave it, not the app."""
+    """`exit()` and `quit()` for the REPL: leave it, not the app."""
 
     def __repr__(self):
         return "Use exit() or Ctrl-D to leave the REPL"
@@ -101,7 +102,7 @@ class ConsoleRepl(code.InteractiveConsole):
     # On the event loop
 
     def feed(self, data):
-        """Take one ``on_input`` delivery."""
+        """Take one `on_input` delivery."""
         with self._ready:
             if data == ETX:
                 self._interrupt()
@@ -126,7 +127,7 @@ class ConsoleRepl(code.InteractiveConsole):
     # On the REPL thread
 
     def readline(self):
-        """The next line typed, ``""`` at the end of input; Ctrl-C raises."""
+        """The next line typed, `""` at the end of input; Ctrl-C raises."""
         with self._ready:
             self._reading = True
             try:

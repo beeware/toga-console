@@ -19,10 +19,10 @@ CONTROL_KEYS = {Gdk.KEY_c: "\x03", Gdk.KEY_d: "\x04"}
 class Console(MultilineTextInput):
     """The text is the output, then the input area: what the user is typing.
 
-    The ``output_end`` mark is where the input area starts. The output calls edit
+    The `output_end` mark is where the input area starts. The output calls edit
     only the text before it, and the buffer's insert-text and delete-range handlers
     let the user edit only the text after it. Those handlers see every edit, so the
-    console's own edits run with ``editing`` set, which they let through.
+    console's own edits run with `editing` set, which they let through.
     """
 
     def create(self):

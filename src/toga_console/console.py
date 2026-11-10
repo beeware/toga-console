@@ -1,4 +1,4 @@
-"""The Console widget: a scrolling view fed by ``write``, with optional typed input."""
+"""The Console widget: a scrolling view fed by `write`, with optional typed input."""
 
 from __future__ import annotations
 
@@ -36,9 +36,11 @@ class OnInputHandler(Protocol):
         """A handler to invoke with the bytes the user enters into the console.
 
         :param widget: The console the bytes were entered into.
-        :param data: The bytes: one or more lines, each ending with ``b"\\n"``, or a
-            single control byte, ``b"\\x03"`` for Ctrl-C or ``b"\\x04"`` for Ctrl-D.
-        :param kwargs: Ensures compatibility with arguments added in future versions.
+        :param data: The bytes: one or more lines, each ending with `b"\\n"`, or
+            a single control byte, `b"\\x03"` for Ctrl-C or `b"\\x04"` for
+            Ctrl-D.
+        :param kwargs: Ensures compatibility with arguments added in future
+            versions.
         """
 
 
@@ -69,17 +71,17 @@ class Console(toga.MultilineTextInput):
         :param errors: The decoding error policy, as for :func:`codecs.lookup_error`.
         :param follow: Keep the newest output in view after each update.
         :param styles: A mapping from stream name to :class:`Style`, merged over the
-            default, which draws ``stderr`` in red.
-        :param readonly: Whether the console refuses typed input. When ``False``, the
+            default, which draws `stderr` in red.
+        :param readonly: Whether the console refuses typed input. When `False`, the
             user can type after the last output; each line entered is echoed on
-            stream ``"stdin"`` and passed to ``on_input``.
+            stream `"stdin"` and passed to `on_input`.
         :param placeholder: The content to display when the console is empty.
         :param on_change: A handler invoked once per display update that changed
             what is shown.
         :param on_input: A handler invoked with the bytes the user enters: each line
             on Enter, and a single control byte for Ctrl-C or Ctrl-D.
         :param kwargs: Initial style properties. Unless a font family is given here or
-            on ``style``, the console uses a monospace font.
+            on `style`, the console uses a monospace font.
         """
         if max_lines < 1:
             raise ValueError("max_lines must be at least 1")
@@ -137,7 +139,7 @@ class Console(toga.MultilineTextInput):
     def value(self) -> str:
         """The scrollback text.
 
-        Assigning clears the console, then writes the text on stream ``"stdout"``.
+        Assigning clears the console, then writes the text on stream `"stdout"`.
         """
         return self._scrollback.text
 
@@ -150,7 +152,7 @@ class Console(toga.MultilineTextInput):
             self.write(text)
 
     def write(self, data: bytes | str, *, stream: str = "stdout") -> None:
-        """Append ``data`` to the console on the named stream.
+        """Append `data` to the console on the named stream.
 
         Bytes are decoded with the stream's own decoder, so a multibyte character may
         span two calls. Escape sequences are stripped. The display updates shortly
@@ -171,9 +173,9 @@ class Console(toga.MultilineTextInput):
     def attach(self, source, *, stream: str = "stdout") -> Attachment:
         """Read a source into the console until it ends.
 
-        ``source`` is an :class:`asyncio.StreamReader` (a subprocess pipe, for
+        `source` is an :class:`asyncio.StreamReader` (a subprocess pipe, for
         example), an async iterable of bytes or text, a file-like object with
-        ``fileno()``, or a file descriptor. A regular file is read to its current
+        `fileno()`, or a file descriptor. A regular file is read to its current
         end, not followed. Returns the :class:`Attachment`, which can cancel the
         source or be awaited for its end.
         """
@@ -237,12 +239,12 @@ class Console(toga.MultilineTextInput):
     def on_input(self) -> OnInputHandler:
         """The handler invoked with the bytes the user enters into the console.
 
-        Typed text is delivered when Enter is pressed, as the line plus ``b"\\n"``;
-        a paste delivers its complete lines at once. Ctrl-C delivers ``b"\\x03"``
-        and Ctrl-D ``b"\\x04"`` at once, leaving a half-typed line in place. The
+        Typed text is delivered when Enter is pressed, as the line plus `b"\\n"`;
+        a paste delivers its complete lines at once. Ctrl-C delivers `b"\\x03"`
+        and Ctrl-D `b"\\x04"` at once, leaving a half-typed line in place. The
         console gives these bytes no meaning of its own: the handler decides what
         they do, such as writing them to a subprocess's stdin, closing it on
-        Ctrl-D, or sending it ``SIGINT`` on Ctrl-C. Text is encoded with the
+        Ctrl-D, or sending it `SIGINT` on Ctrl-C. Text is encoded with the
         console's encoding. A read-only console delivers nothing.
         """
         return self._on_input
@@ -265,8 +267,8 @@ class Console(toga.MultilineTextInput):
 
         The backend calls this when the input area's text would contain a line
         break: on Enter, or on a paste. The complete lines are echoed on stream
-        ``"stdin"``, the display is updated at once, and then they are passed to
-        ``on_input`` together. Returns the text after the last line break, which
+        `"stdin"`, the display is updated at once, and then they are passed to
+        `on_input` together. Returns the text after the last line break, which
         stays in the input area.
         """
         *lines, rest = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
@@ -278,7 +280,7 @@ class Console(toga.MultilineTextInput):
         return rest
 
     def _enter_control(self, char: str) -> None:
-        """Pass a control key's byte to ``on_input``; the backend calls this."""
+        """Pass a control key's byte to `on_input`; the backend calls this."""
         if char not in (ETX, EOT):
             raise ValueError(f"not a console control key: {char!r}")
         self.on_input(data=char.encode("ascii"))

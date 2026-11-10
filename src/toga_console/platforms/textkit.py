@@ -1,7 +1,7 @@
 """The console backend contract over an NSTextStorage, shared by macOS and iOS.
 
 The native text is the output, then the input area: what the user is typing.
-``output_length`` is where the input area starts, in NSString units. The output
+`output_length` is where the input area starts, in NSString units. The output
 calls edit only the text before it, and :meth:`TextKitConsole.should_change` lets
 the user edit only the text after it.
 """
@@ -26,16 +26,16 @@ CONTROL_KEYS = {"c": "\x03", "d": "\x04"}
 
 
 def utf16_length(text):
-    """The length of ``text`` as NSString counts it."""
+    """The length of `text` as NSString counts it."""
     return len(text.encode("utf-16-le")) // 2
 
 
 class TextKitConsole:
-    """A mixin for a backend whose ``text_view`` is an NSTextView or a UITextView.
+    """A mixin for a backend whose `text_view` is an NSTextView or a UITextView.
 
-    The backend provides ``text_view`` and ``_attributes(style)``, and sets
-    ``output_length = 0`` and ``input_readonly = True`` when it creates the view.
-    ``_edited()`` runs after every change the console makes to the storage.
+    The backend provides `text_view` and `_attributes(style)`, and sets
+    `output_length = 0` and `input_readonly = True` when it creates the view.
+    `_edited()` runs after every change the console makes to the storage.
     """
 
     def _edited(self):
@@ -104,9 +104,9 @@ class TextKitConsole:
     # Typing
 
     def should_change(self, location, length, text):
-        """Decide a user edit of ``length`` characters at ``location``.
+        """Decide a user edit of `length` characters at `location`.
 
-        ``text`` is the replacement, or None for a change of attributes only.
+        `text` is the replacement, or None for a change of attributes only.
         """
         start = self.output_length
         if text is None:

@@ -28,12 +28,12 @@ EDITABLE_INPUT_TYPE = (
 
 
 def utf16_length(text):
-    """The length of ``text`` as a Java string counts it."""
+    """The length of `text` as a Java string counts it."""
     return len(text.encode("utf-16-le")) // 2
 
 
 def substring(chars, start, end):
-    """``chars[start:end]`` in Java string units, as a Python string.
+    """`chars[start:end]` in Java string units, as a Python string.
 
     Chaquopy hands a Java String over as a Python str, which counts code points, and
     any other CharSequence as a Java object.
@@ -81,10 +81,10 @@ class TogaControlKeys(dynamic_proxy(View.OnKeyListener)):
 class Console(MultilineTextInput):
     """The text is the output, then the input area: what the user is typing.
 
-    ``output_length`` is where the input area starts, in Java string units. The
+    `output_length` is where the input area starts, in Java string units. The
     output calls edit only the text before it, and the input filter lets the user
     edit only the text after it. Every edit to an Editable passes through its
-    filters, so the console's own edits run with ``editing_output`` set, which the
+    filters, so the console's own edits run with `editing_output` set, which the
     filter lets through.
     """
 
@@ -217,7 +217,7 @@ class Console(MultilineTextInput):
     # Typing
 
     def _filter(self, source, start, end, dest, dstart, dend):
-        """Decide an edit replacing ``dest[dstart:dend]`` with ``source[start:end]``.
+        """Decide an edit replacing `dest[dstart:dend]` with `source[start:end]`.
 
         Returns None to allow the edit, or the text to use instead. An edit that
         cannot be made where it was aimed is refused, and made from the UI thread's

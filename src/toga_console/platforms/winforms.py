@@ -36,7 +36,7 @@ def utf16_length(text):
 class Console(MultilineTextInput):
     """The text is the output, then the input area: what the user is typing.
 
-    ``length`` is the output's length, so the input area starts there. The output
+    `length` is the output's length, so the input area starts there. The output
     calls edit only the text before it, and the key handlers let the user edit only
     the text after it.
     """
@@ -290,7 +290,7 @@ class Console(MultilineTextInput):
                 native.SelectionColor = self._color
 
     def _edit(self, text):
-        """Type ``text`` at the caret, entering every line it completes."""
+        """Type `text` at the caret, entering every line it completes."""
         native = self.native
         start = native.SelectionStart
         end = start + native.SelectionLength
@@ -321,7 +321,7 @@ class Console(MultilineTextInput):
         native.ScrollToCaret()
 
     def _text(self, start, end):
-        """The text from ``start`` to ``end``, in rich edit positions."""
+        """The text from `start` to `end`, in rich edit positions."""
         if self._placeholder_visible:
             return ""
         # The control writes each line break as one position, "\n" in Text.
@@ -360,9 +360,9 @@ def suppress(event):
 
 
 def shift_insert(position, at, length, pushed):
-    """Where ``position`` lands once ``length`` positions go in at ``at``.
+    """Where `position` lands once `length` positions go in at `at`.
 
-    A position at ``at`` itself moves only if ``pushed``.
+    A position at `at` itself moves only if `pushed`.
     """
     if position > at or (position == at and pushed):
         return position + length
@@ -370,7 +370,7 @@ def shift_insert(position, at, length, pushed):
 
 
 def shift(position, start, end):
-    """Where ``position`` lands once the range from ``start`` to ``end`` is deleted."""
+    """Where `position` lands once the range from `start` to `end` is deleted."""
     if position <= start:
         return position
     if position < end:

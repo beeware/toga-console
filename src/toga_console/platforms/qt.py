@@ -42,7 +42,7 @@ DELETING_ACTIONS = {"edit-cut", "edit-delete"}
 
 
 def utf16_length(text):
-    """The length of ``text`` as a QTextDocument counts positions."""
+    """The length of `text` as a QTextDocument counts positions."""
     return len(text.encode("utf-16-le", "surrogatepass")) // 2
 
 
@@ -92,7 +92,7 @@ class TogaConsoleTextEdit(QPlainTextEdit):
 class Console(MultilineTextInput):
     """The text is the output, then the input area: what the user is typing.
 
-    ``output_length`` is where the input area starts, in document positions. The
+    `output_length` is where the input area starts, in document positions. The
     output calls edit only the text before it, and the text edit lets the user edit
     only the text after it.
     """
@@ -230,7 +230,7 @@ class Console(MultilineTextInput):
         return cursor.hasSelection() and cursor.selectionStart() < self.output_length
 
     def _edit(self, text):
-        """Type ``text`` at the caret, entering every line it completes."""
+        """Type `text` at the caret, entering every line it completes."""
         if self.input_readonly or not text:
             return
         cursor = self.native.textCursor()

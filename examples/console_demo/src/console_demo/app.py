@@ -1,15 +1,15 @@
 """Console Demo: feeds the toga-console widget from a burst, a pipe, and a subprocess.
 
 The REPL button starts a Python REPL inside the app, fed with the bytes the
-console's ``on_input`` handler receives: typed lines, Ctrl-C, and Ctrl-D.
+console's `on_input` handler receives: typed lines, Ctrl-C, and Ctrl-D.
 
 The self-test runs at startup and from its button: it writes the burst directly,
 then streams the same bytes through an OS pipe until the pipe's attachment sees
 the end, and compares the native view's text with the model's text and with the
 expected text. It then trims the console to seven lines and compares the native
 view's text with the model's text and with the last seven expected lines. The
-verdict is printed as ``SELFTEST OK`` or ``SELFTEST FAIL`` so a log reader can
-check a backend without eyes on the screen. The self-test then types ``6 * 7``
+verdict is printed as `SELFTEST OK` or `SELFTEST FAIL` so a log reader can
+check a backend without eyes on the screen. The self-test then types `6 * 7`
 into the native view, as a user would, and checks that the REPL answers, that
 Ctrl-C interrupts a busy loop and a prompt, and that Ctrl-D ends the REPL.
 """
