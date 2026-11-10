@@ -11,6 +11,7 @@ name = "console_demo"
 
 [tool.briefcase]
 project_name = "console_demo"
+default_app = "console_demo"
 bundle = "org.beeware.examples"
 url = "https://beeware.org"
 license = "BSD-3-Clause"
@@ -75,7 +76,7 @@ build_gradle_dependencies = [
 root = "../../"
 
 [tool.briefcase.app.console_demo_qt]
-formal_name = "Console Demo"
+formal_name = "Console Demo (Qt)"
 sources = [
     "src/console_demo_qt",
     "src/console_demo",

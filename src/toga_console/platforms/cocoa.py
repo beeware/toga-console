@@ -1,29 +1,108 @@
-from rubicon.objc import NSRange
+from ctypes import c_void_p
+
+from rubicon.objc import (
+    NSObject,
+    NSRange,
+    ObjCInstance,
+    objc_method,
+    objc_property,
+    send_super,
+)
 from toga_cocoa.colors import native_color
 from toga_cocoa.libs import (
-    NSAttributedString,
+    NSBezelBorder,
     NSColor,
+    NSEvent,
+    NSEventModifierFlagCommand,
+    NSEventModifierFlagControl,
+    NSEventModifierFlagOption,
+    NSEventModifierFlagShift,
+    NSEventType,
     NSFontAttributeName,
     NSFontManager,
     NSForegroundColorAttributeName,
     NSMutableDictionary,
+    NSPoint,
+    NSScrollView,
+    NSViewHeightSizable,
+    NSViewWidthSizable,
 )
-from toga_cocoa.widgets.multilinetextinput import MultilineTextInput
+from toga_cocoa.widgets.multilinetextinput import MultilineTextInput, TogaTextView
 
-# NSStringCompareOptions
-NSLiteralSearch = 2  # matches a newline even when a combining character follows it
-NSBackwardsSearch = 4
+from ..model import PLAIN
+from .textkit import CONTROL_KEYS, TextKitConsole
+
 # NSFontTraitMask
 NSItalicFontMask = 1 << 0
 NSBoldFontMask = 1 << 1
-# NSNotFound is NSIntegerMax.
-NSNotFound = 0x7FFFFFFFFFFFFFFF
+CHORD_FLAGS = (
+    NSEventModifierFlagShift
+    | NSEventModifierFlagControl
+    | NSEventModifierFlagOption
+    | NSEventModifierFlagCommand
+)
 
 
-class Console(MultilineTextInput):
+class TogaConsoleTextView(TogaTextView):
+    """Sends Ctrl-C and Ctrl-D to the console instead of NSTextView's bindings.
+
+    NSTextView binds Ctrl-D to deleting forward and Ctrl-C to nothing.
+    """
+
+    @objc_method
+    def keyDown_(self, event) -> None:
+        if event.modifierFlags & CHORD_FLAGS == NSEventModifierFlagControl:
+            char = CONTROL_KEYS.get(str(event.charactersIgnoringModifiers))
+            if char is not None:
+                self.impl.send_control(char)
+                return
+        send_super(__class__, self, "keyDown:", event, argtypes=[c_void_p])
+
+
+class TogaConsoleDelegate(NSObject):
+    """Keeps typing inside the input area, and enters each line typed there."""
+
+    impl = objc_property(object, weak=True)
+
+    @objc_method
+    def textView_shouldChangeTextInRange_replacementString_(
+        self, text_view, affected: NSRange, replacement
+    ) -> bool:
+        return self.impl.should_change(
+            affected.location,
+            affected.length,
+            None if replacement is None else str(replacement),
+        )
+
+    @objc_method
+    def textView_shouldChangeTypingAttributes_toAttributes_(
+        self, text_view, old, new
+    ) -> ObjCInstance:
+        # Typed text is plain, whatever the output it follows was drawn in.
+        return self.impl._attributes(PLAIN)
+
+
+class Console(TextKitConsole, MultilineTextInput):
     def create(self):
-        super().create()
-        text = self.native_text
+        # Toga's create(), with the text view that catches Ctrl-C and Ctrl-D.
+        self.native = NSScrollView.alloc().init()
+        self.native.hasVerticalScroller = True
+        self.native.hasHorizontalScroller = False
+        self.native.autohidesScrollers = False
+        self.native.borderType = NSBezelBorder
+
+        text = self.native_text = TogaConsoleTextView.alloc().init()
+        text.interface = self.interface
+        text.impl = self
+        text.verticallyResizable = True
+        text.horizontallyResizable = False
+        text.usesAdaptiveColorMappingForDarkAppearance = True
+        text.setAutomaticQuoteSubstitutionEnabled(False)
+        text.setAutomaticDashSubstitutionEnabled(False)
+        text.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable
+        self.native.documentView = text
+        self.add_constraints()
+
         text.editable = False
         text.selectable = True
         text.allowsUndo = False
@@ -34,19 +113,63 @@ class Console(MultilineTextInput):
         text.setAutomaticTextReplacementEnabled(False)
         text.setAutomaticTextCompletionEnabled(False)
 
+        # The delegate is a separate object, so TogaTextView's textDidChange_ never
+        # runs and typing does not fire on_change, which reports output.
+        self.delegate = TogaConsoleDelegate.alloc().init()
+        self.delegate.impl = self
+        text.delegate = self.delegate
+
         # NSTextView.font and .textColor read back the *first character's* attributes
         # once the storage is styled, so the base style is tracked here instead.
         self.base_font = text.font
         self.base_color = NSColor.textColor
         self.attributes = {}
+        self.output_length = 0
+        self.input_readonly = True
+
+    @property
+    def text_view(self):
+        return self.native_text
+
+    # Typing, as the user would
+
+    def type(self, text):
+        self.native_text.insertText(text)
+
+    def enter(self):
+        self.native_text.insertNewline(None)  # what Return sends
+
+    def backspace(self):
+        self.native_text.deleteBackward(None)
+
+    def control(self, key):
+        self.native_text.keyDown(
+            NSEvent.keyEventWithType(
+                NSEventType.KeyDown,
+                location=NSPoint(0, 0),
+                modifierFlags=NSEventModifierFlagControl,
+                timestamp=0.0,
+                windowNumber=0,
+                context=None,
+                characters=chr(ord(key) - ord("a") + 1),
+                charactersIgnoringModifiers=key,
+                isARepeat=False,
+                keyCode={"c": 8, "d": 2}[key],
+            )
+        )
 
     # Inherited methods that must keep the base style in sync
 
+    def get_readonly(self):
+        return self.input_readonly
+
     def set_readonly(self, value):
-        self.native_text.editable = False  # a console is never editable
+        self.input_readonly = bool(value)
+        self.native_text.editable = not self.input_readonly
 
     def set_enabled(self, value):
-        self.native_text.selectable = value  # editing stays off
+        self.native_text.selectable = value
+        self.native_text.editable = value and not self.input_readonly
 
     def set_font(self, font):
         super().set_font(font)
@@ -63,50 +186,6 @@ class Console(MultilineTextInput):
         super().set_color(value)
         self.base_color = native_color(value) or NSColor.textColor
         self.attributes = {}
-
-    # Console backend contract
-
-    def replace_tail(self, runs):
-        # Build every piece first: an exception between beginEditing and endEditing
-        # would leave the storage mid-edit.
-        pieces = [
-            NSAttributedString.alloc().initWithString(
-                text, attributes=self._attributes(style)
-            )
-            for text, style in runs
-        ]
-        storage = self.native_text.textStorage
-        length = storage.length()
-        found = storage.string.rangeOfString(
-            "\n", options=NSBackwardsSearch | NSLiteralSearch
-        )
-        start = 0 if found.location == NSNotFound else found.location + 1
-        storage.beginEditing()
-        if length > start:
-            storage.deleteCharactersInRange(NSRange(start, length - start))
-        for piece in pieces:
-            storage.appendAttributedString(piece)
-        storage.endEditing()
-
-    def trim_lines(self, count):
-        storage = self.native_text.textStorage
-        string = storage.string
-        length = storage.length()
-        end = 0
-        for _ in range(count):
-            found = string.rangeOfString(
-                "\n", options=NSLiteralSearch, range=NSRange(end, length - end)
-            )
-            if found.location == NSNotFound:
-                end = length
-                break
-            end = found.location + 1
-        if end:
-            storage.deleteCharactersInRange(NSRange(0, end))
-
-    def clear(self):
-        storage = self.native_text.textStorage
-        storage.deleteCharactersInRange(NSRange(0, storage.length()))
 
     # Styles
 

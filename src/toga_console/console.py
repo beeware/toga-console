@@ -1,4 +1,4 @@
-"""The Console widget: a read-only, scrolling view fed by ``write``."""
+"""The Console widget: a scrolling view fed by `write`, with optional typed input."""
 
 from __future__ import annotations
 
@@ -7,11 +7,13 @@ import codecs
 import warnings
 from collections.abc import Mapping
 from functools import cached_property
-from typing import Any
+from typing import Any, Protocol
 
 import toga
 from toga.fonts import MONOSPACE
-from toga.platform import get_factory
+from toga.handlers import wrapped_handler
+from toga.keys import Key
+from toga.platform import current_platform, get_factory
 from toga.widgets.base import StyleT
 from toga.widgets.multilinetextinput import OnChangeHandler
 
@@ -22,6 +24,28 @@ FLUSH_INTERVAL = 0.05
 """Seconds between a write and the display update that shows it."""
 
 DEFAULT_STYLES: Mapping[str, Style] = {"stderr": Style(color="red")}
+
+
+ETX = "\x03"
+"""What Ctrl-C sends: End of Text."""
+EOT = "\x04"
+"""What Ctrl-D sends: End of Transmission."""
+
+CONTROL = Key.MOD_3 if current_platform in {"macOS", "iOS"} else Key.MOD_1
+"""Toga's name for the Control key, which on macOS and iOS is `MOD_3`."""
+
+
+class OnInputHandler(Protocol):
+    def __call__(self, widget: Console, data: bytes, **kwargs: Any) -> object:
+        """A handler to invoke with the bytes the user enters into the console.
+
+        :param widget: The console the bytes were entered into.
+        :param data: The bytes: one or more lines, each ending with `b"\\n"`, or
+            a single control byte, `b"\\x03"` for Ctrl-C or `b"\\x04"` for
+            Ctrl-D.
+        :param kwargs: Ensures compatibility with arguments added in future
+            versions.
+        """
 
 
 class Console(toga.MultilineTextInput):
@@ -35,8 +59,10 @@ class Console(toga.MultilineTextInput):
         errors: str = "replace",
         follow: bool = True,
         styles: Mapping[str, Style] | None = None,
+        readonly: bool = True,
         placeholder: str | None = None,
         on_change: OnChangeHandler | None = None,
+        on_input: OnInputHandler | None = None,
         **kwargs,
     ):
         """Create a new console.
@@ -49,12 +75,17 @@ class Console(toga.MultilineTextInput):
         :param errors: The decoding error policy, as for :func:`codecs.lookup_error`.
         :param follow: Keep the newest output in view after each update.
         :param styles: A mapping from stream name to :class:`Style`, merged over the
-            default, which draws ``stderr`` in red.
+            default, which draws `stderr` in red.
+        :param readonly: Whether the console refuses typed input. When `False`, the
+            user can type after the last output; each line entered is echoed on
+            stream `"stdin"` and passed to `on_input`.
         :param placeholder: The content to display when the console is empty.
         :param on_change: A handler invoked once per display update that changed
             what is shown.
+        :param on_input: A handler invoked with the bytes the user enters: each line
+            on Enter, and a single control byte for Ctrl-C or Ctrl-D.
         :param kwargs: Initial style properties. Unless a font family is given here or
-            on ``style``, the console uses a monospace font.
+            on `style`, the console uses a monospace font.
         """
         if max_lines < 1:
             raise ValueError("max_lines must be at least 1")
@@ -82,11 +113,12 @@ class Console(toga.MultilineTextInput):
             id=id,
             style=style,
             value=None,
-            readonly=True,
+            readonly=readonly,
             placeholder=placeholder,
             on_change=on_change,
             **kwargs,
         )
+        self.on_input = on_input
 
     @cached_property
     def factory(self):
@@ -111,7 +143,7 @@ class Console(toga.MultilineTextInput):
     def value(self) -> str:
         """The scrollback text.
 
-        Assigning clears the console, then writes the text on stream ``"stdout"``.
+        Assigning clears the console, then writes the text on stream `"stdout"`.
         """
         return self._scrollback.text
 
@@ -124,7 +156,7 @@ class Console(toga.MultilineTextInput):
             self.write(text)
 
     def write(self, data: bytes | str, *, stream: str = "stdout") -> None:
-        """Append ``data`` to the console on the named stream.
+        """Append `data` to the console on the named stream.
 
         Bytes are decoded with the stream's own decoder, so a multibyte character may
         span two calls. Escape sequences are stripped. The display updates shortly
@@ -145,9 +177,9 @@ class Console(toga.MultilineTextInput):
     def attach(self, source, *, stream: str = "stdout") -> Attachment:
         """Read a source into the console until it ends.
 
-        ``source`` is an :class:`asyncio.StreamReader` (a subprocess pipe, for
+        `source` is an :class:`asyncio.StreamReader` (a subprocess pipe, for
         example), an async iterable of bytes or text, a file-like object with
-        ``fileno()``, or a file descriptor. A regular file is read to its current
+        `fileno()`, or a file descriptor. A regular file is read to its current
         end, not followed. Returns the :class:`Attachment`, which can cancel the
         source or be awaited for its end.
         """
@@ -208,16 +240,60 @@ class Console(toga.MultilineTextInput):
         return self._styles
 
     @property
-    def readonly(self) -> bool:
-        """A console is always read-only."""
-        return True
+    def on_input(self) -> OnInputHandler:
+        """The handler invoked with the bytes the user enters into the console.
 
-    @readonly.setter
-    def readonly(self, value: object) -> None:
-        # toga-core's __init__ assigns True here, which makes the native view read-only.
-        if not value:
-            raise ValueError("a Console is always read-only")
-        self._impl.set_readonly(True)
+        Typed text is delivered when Enter is pressed, as the line plus `b"\\n"`;
+        a paste delivers its complete lines at once. Ctrl-C delivers `b"\\x03"`
+        and Ctrl-D `b"\\x04"` at once, leaving a half-typed line in place. The
+        console gives these bytes no meaning of its own: the handler decides what
+        they do, such as writing them to a subprocess's stdin, closing it on
+        Ctrl-D, or sending it `SIGINT` on Ctrl-C. Text is encoded with the
+        console's encoding. A read-only console delivers nothing.
+        """
+        return self._on_input
+
+    @on_input.setter
+    def on_input(self, handler: OnInputHandler | None) -> None:
+        self._on_input = wrapped_handler(self, handler)
+
+    # Typing
+
+    def type(self, text: str) -> None:
+        """Type `text` at the caret, as the user would.
+
+        The text goes through the native view's own handling of typing, so a line
+        break enters the line, and text typed with the caret in the output goes
+        at the end of the input.
+        """
+        self._impl.type(text)
+
+    def press(self, key: Key | str) -> None:
+        """Press a key, as the user would.
+
+        :param key: `Key.ENTER`, `Key.BACKSPACE`, or Ctrl-C or Ctrl-D, which
+            are `CONTROL + Key.C` and `CONTROL + Key.D`. `CONTROL` is
+            `Key.MOD_1`, except on macOS and iOS, where `MOD_1` is Command and
+            Control is `Key.MOD_3`.
+        :raises ValueError: For any other key.
+        """
+        name = key.value if isinstance(key, Key) else key
+        if name == Key.ENTER.value:
+            self._impl.enter()
+        elif name == Key.BACKSPACE.value:
+            self._impl.backspace()
+        elif name in {CONTROL + Key.C, CONTROL + Key.D}:
+            self._impl.control(name[-1])
+        else:
+            raise ValueError(f"a console cannot press {key!r}")
+
+    def caret_to(self, index: int) -> None:
+        """Move the caret to `index` in the text :meth:`text` returns."""
+        self._impl.caret_to(index)
+
+    def text(self) -> str:
+        """The text the view shows: the output, then the line being typed."""
+        return self._impl.get_text()
 
     # Internals
 
@@ -227,6 +303,29 @@ class Console(toga.MultilineTextInput):
         except KeyError:
             channel = self._streams[name] = Stream(name, self._encoding, self._errors)
             return channel
+
+    def _enter_input(self, text: str) -> str:
+        """Take the text in the console's input area from the backend.
+
+        The backend calls this when the input area's text would contain a line
+        break: on Enter, or on a paste. The complete lines are echoed on stream
+        `"stdin"`, the display is updated at once, and then they are passed to
+        `on_input` together. Returns the text after the last line break, which
+        stays in the input area.
+        """
+        *lines, rest = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+        if lines:
+            entered = "".join(line + "\n" for line in lines)
+            self.write(entered, stream="stdin")
+            self.flush()
+            self.on_input(data=entered.encode(self._encoding, self._errors))
+        return rest
+
+    def _enter_control(self, char: str) -> None:
+        """Pass a control key's byte to `on_input`; the backend calls this."""
+        if char not in (ETX, EOT):
+            raise ValueError(f"not a console control key: {char!r}")
+        self.on_input(data=char.encode("ascii"))
 
     def _schedule_flush(self) -> None:
         if self._pending_flush is not None:
