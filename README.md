@@ -55,7 +55,7 @@ Anything running on the event loop can also call `console.write(data, stream="st
 | `value` | The scrollback text. Assigning clears, then writes the text on `stdout`. |
 | `max_lines` | Committed lines kept; assigning trims at once. |
 | `follow` | Scroll to the newest output after each update. |
-| `readonly` | Whether typing is refused. |
+| `readonly` | Boolean; does the console accepts keyboard input when it has focus? |
 | `styles` | A dict from stream name to `Style`; by default `stderr` is red. A change applies to text written afterwards. |
 | `on_input` | Called as `on_input(widget, data)` with the bytes the user enters: the line on Return, `b"\x03"` on Ctrl-C, `b"\x04"` on Ctrl-D. See [Input](#input). |
 | `on_change` | Fires once per display update that changed what is shown; typing does not fire it. Use it to show a "new output" hint while the console is hidden. |
@@ -77,7 +77,7 @@ A line reaching 4096 characters is split, a sequence of 256 characters without i
 
 ## Input
 
-With `readonly=False`, the console accepts typing after the last output, the way a terminal does: Backspace stops at the output, and a key pressed with the caret in the output types at the end of the input. Output that arrives while you type goes in before your input, which stays where it is.
+When `readonly=True`, the console does not accept keyboard input. When `readonly=False`, the console accepts typing after the last output, the way a terminal does: Backspace stops at the output, and a key pressed with the caret in the output types at the end of the input. Output that arrives while you type goes in before your input, which stays where it is.
 
 What the user enters reaches the `on_input` handler as bytes, encoded with the console's encoding:
 
