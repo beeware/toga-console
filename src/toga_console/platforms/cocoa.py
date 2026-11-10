@@ -12,6 +12,10 @@ from toga_cocoa.colors import native_color
 from toga_cocoa.libs import (
     NSBezelBorder,
     NSColor,
+    NSEventModifierFlagCommand,
+    NSEventModifierFlagControl,
+    NSEventModifierFlagOption,
+    NSEventModifierFlagShift,
     NSFontAttributeName,
     NSFontManager,
     NSForegroundColorAttributeName,
@@ -28,11 +32,6 @@ from .textkit import CONTROL_KEYS, TextKitConsole
 # NSFontTraitMask
 NSItalicFontMask = 1 << 0
 NSBoldFontMask = 1 << 1
-# NSEventModifierFlags
-NSEventModifierFlagShift = 1 << 17
-NSEventModifierFlagControl = 1 << 18
-NSEventModifierFlagOption = 1 << 19
-NSEventModifierFlagCommand = 1 << 20
 CHORD_FLAGS = (
     NSEventModifierFlagShift
     | NSEventModifierFlagControl
