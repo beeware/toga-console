@@ -37,7 +37,7 @@ class Console(MultilineTextInput):
     # Typing, as a native backend sees it
 
     def type(self, text):
-        """Type `text` at the end of the input, as a user would."""
+        """Type `text` at the end of the input."""
         self._action("type", text=text)
         if self.get_readonly():
             return
@@ -46,8 +46,22 @@ class Console(MultilineTextInput):
             text = self.interface._enter_input(text)
         self.input = text
 
-    def press_control(self, char):
-        """Press Ctrl-C (`"\x03"`) or Ctrl-D (`"\x04"`), as a user would."""
-        self._action("press control", char=char)
+    def enter(self):
+        self.type("\n")
+
+    def backspace(self):
+        self._action("backspace")
         if not self.get_readonly():
-            self.interface._enter_control(char)
+            self.input = self.input[:-1]
+
+    def caret_to(self, index):
+        self._action("caret to", index=index)
+
+    def control(self, key):
+        """Press Ctrl-C or Ctrl-D, by its letter."""
+        self._action("control", key=key)
+        if not self.get_readonly():
+            self.interface._enter_control({"c": "\x03", "d": "\x04"}[key])
+
+    def get_text(self):
+        return self.shadow + self.input

@@ -22,12 +22,13 @@ import time
 
 import toga
 from toga.constants import COLUMN, ROW
+from toga.keys import Key
 from toga.platform import current_platform
 
 from toga_console import Console
+from toga_console.console import CONTROL
 from toga_console.model import DEFAULT_MAX_LINES
 
-from .keyboard import native_keyboard
 from .repl import ConsoleRepl
 
 BURST = [
@@ -174,10 +175,8 @@ class ConsoleDemo(toga.App):
         await self.self_test()
 
     async def input_test(self):
-        """Type into the native view and check the REPL's answers; None if untested."""
-        keyboard = native_keyboard(self.console)
-        if keyboard is None:
-            return None
+        """Type into the native view and check the REPL's answers."""
+        console = self.console
 
         def ends(text):
             return lambda: self.console.value.endswith(text)
@@ -188,32 +187,32 @@ class ConsoleDemo(toga.App):
             return False
         # Typed before the prompt reaches the view: the input area must stay after
         # the output once it arrives.
-        keyboard.type("6 * ")
-        self.console.flush()
+        console.type("6 * ")
+        console.flush()
         # Backspace at the start of the input must not reach the prompt.
-        keyboard.caret_to(self.console._impl.output_length)
-        keyboard.backspace()
+        console.caret_to(len(console.value))
+        console.press(Key.BACKSPACE)
         # Typing with the caret in the output goes to the end of the input.
-        keyboard.caret_to(0)
-        keyboard.type("7")
+        console.caret_to(0)
+        console.type("7")
         await asyncio.sleep(0.1)
-        keyboard.enter()
+        console.press(Key.ENTER)
         answered = await until(ends(">>> 6 * 7\n42\n>>> "))
 
         # Ctrl-C interrupts running code...
-        keyboard.type("while True: pass")
-        keyboard.enter()
+        console.type("while True: pass")
+        console.press(Key.ENTER)
         await until(ends("... "))
-        keyboard.enter()  # the blank line that ends the block
+        console.press(Key.ENTER)  # the blank line that ends the block
         await asyncio.sleep(0.3)
-        keyboard.control("c")
+        console.press(CONTROL + Key.C)
         busy_interrupted = await until(ends("KeyboardInterrupt\n>>> "))
         # ...and a prompt.
-        keyboard.control("c")
+        console.press(CONTROL + Key.C)
         prompt_interrupted = await until(ends(">>> \nKeyboardInterrupt\n>>> "))
 
         # Ctrl-D at the prompt is the end of input.
-        keyboard.control("d")
+        console.press(CONTROL + Key.D)
         ended = await until(lambda: repl.done.done())
         self.console.flush()
         verdict = (
@@ -223,14 +222,14 @@ class ConsoleDemo(toga.App):
             and ended
             and self.console.value.endswith(">>> \nREPL ended.\n")
             and self.console._impl.get_value() == self.console.value
-            and keyboard.text() == self.console.value  # nothing left in the input
+            and console.text() == self.console.value  # nothing left in the input
         )
         if not verdict:
             print(
                 f"INPUT answered={answered} busy={busy_interrupted} "
                 f"prompt={prompt_interrupted} ended={ended} "
                 f"value={self.console.value[-200:]!r} "
-                f"native={keyboard.text()[-200:]!r}",
+                f"native={console.text()[-200:]!r}",
                 flush=True,
             )
         return verdict

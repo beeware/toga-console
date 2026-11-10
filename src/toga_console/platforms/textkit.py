@@ -128,10 +128,19 @@ class TextKitConsole:
         self._set_input(text, utf16_length(text) - utf16_length(after))
         return False
 
-    def control(self, char):
+    def send_control(self, char):
         """Send a control key's character, unless the console is read-only."""
         if not self.input_readonly:
             self.interface._enter_control(char)
+
+    # Typing, as the user would
+
+    def caret_to(self, index):
+        position = utf16_length(self.get_text()[:index])
+        self.text_view.setSelectedRange(NSRange(position, 0))
+
+    def get_text(self):
+        return str(self.text_view.textStorage.string)
 
     def _set_input(self, text, caret):
         storage = self.text_view.textStorage

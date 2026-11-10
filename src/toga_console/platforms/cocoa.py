@@ -12,14 +12,17 @@ from toga_cocoa.colors import native_color
 from toga_cocoa.libs import (
     NSBezelBorder,
     NSColor,
+    NSEvent,
     NSEventModifierFlagCommand,
     NSEventModifierFlagControl,
     NSEventModifierFlagOption,
     NSEventModifierFlagShift,
+    NSEventType,
     NSFontAttributeName,
     NSFontManager,
     NSForegroundColorAttributeName,
     NSMutableDictionary,
+    NSPoint,
     NSScrollView,
     NSViewHeightSizable,
     NSViewWidthSizable,
@@ -51,7 +54,7 @@ class TogaConsoleTextView(TogaTextView):
         if event.modifierFlags & CHORD_FLAGS == NSEventModifierFlagControl:
             char = CONTROL_KEYS.get(str(event.charactersIgnoringModifiers))
             if char is not None:
-                self.impl.control(char)
+                self.impl.send_control(char)
                 return
         send_super(__class__, self, "keyDown:", event, argtypes=[c_void_p])
 
@@ -127,6 +130,33 @@ class Console(TextKitConsole, MultilineTextInput):
     @property
     def text_view(self):
         return self.native_text
+
+    # Typing, as the user would
+
+    def type(self, text):
+        self.native_text.insertText(text)
+
+    def enter(self):
+        self.native_text.insertNewline(None)  # what Return sends
+
+    def backspace(self):
+        self.native_text.deleteBackward(None)
+
+    def control(self, key):
+        self.native_text.keyDown(
+            NSEvent.keyEventWithType(
+                NSEventType.KeyDown,
+                location=NSPoint(0, 0),
+                modifierFlags=NSEventModifierFlagControl,
+                timestamp=0.0,
+                windowNumber=0,
+                context=None,
+                characters=chr(ord(key) - ord("a") + 1),
+                charactersIgnoringModifiers=key,
+                isARepeat=False,
+                keyCode={"c": 8, "d": 2}[key],
+            )
+        )
 
     # Inherited methods that must keep the base style in sync
 

@@ -18,6 +18,11 @@ SendStringMessage = WINFUNCTYPE(LPARAM, HWND, UINT, WPARAM, c_wchar_p)(
     ("SendMessageW", windll.user32)
 )
 WM_SETREDRAW = 0x000B
+WM_KEYDOWN = 0x0100
+WM_KEYUP = 0x0101
+WM_CHAR = 0x0102
+VK_BACK = 0x08
+VK_RETURN = 0x0D
 EM_LINESCROLL = 0x00B6
 EM_REPLACESEL = 0x00C2
 EM_GETFIRSTVISIBLELINE = 0x00CE
@@ -205,6 +210,42 @@ class Console(MultilineTextInput):
         # set_value, which the console never calls.
         if not self.native.TextLength and not self.native.ContainsFocus:
             self._set_placeholder_visible(True)
+
+    # Typing, as the user would. Keys are sent to the control's window, as the
+    # message loop delivers them.
+
+    def type(self, text):
+        # A character message carries one UTF-16 code unit.
+        units = text.encode("utf-16-le", "surrogatepass")
+        for i in range(0, len(units), 2):
+            unit = int.from_bytes(units[i : i + 2], "little")
+            SendMessage(self._hwnd(), WM_CHAR, unit, 0)
+
+    def enter(self):
+        self._press(VK_RETURN, "\r")
+
+    def backspace(self):
+        self._press(VK_BACK, "\b")
+
+    def caret_to(self, index):
+        self.native.Select(utf16_length(self.get_text()[:index]), 0)
+
+    def control(self, key):
+        # A sent message cannot carry the Control key's state, which Winforms reads
+        # from the keyboard, so the key event goes to the handler directly.
+        keys = {"c": WinForms.Keys.C, "d": WinForms.Keys.D}[key]
+        self.winforms_key_down(
+            self.native, WinForms.KeyEventArgs(keys | WinForms.Keys.Control)
+        )
+
+    def get_text(self):
+        return self._text(0, self.native.TextLength)
+
+    def _press(self, virtual_key, char):
+        hwnd = self._hwnd()
+        SendMessage(hwnd, WM_KEYDOWN, virtual_key, 0)
+        SendMessage(hwnd, WM_CHAR, ord(char), 0)
+        SendMessage(hwnd, WM_KEYUP, virtual_key, 0)
 
     # Typing
 

@@ -12,7 +12,8 @@ from typing import Any, Protocol
 import toga
 from toga.fonts import MONOSPACE
 from toga.handlers import wrapped_handler
-from toga.platform import get_factory
+from toga.keys import Key
+from toga.platform import current_platform, get_factory
 from toga.widgets.base import StyleT
 from toga.widgets.multilinetextinput import OnChangeHandler
 
@@ -29,6 +30,9 @@ ETX = "\x03"
 """What Ctrl-C sends: End of Text."""
 EOT = "\x04"
 """What Ctrl-D sends: End of Transmission."""
+
+CONTROL = Key.MOD_3 if current_platform in {"macOS", "iOS"} else Key.MOD_1
+"""Toga's name for the Control key, which on macOS and iOS is `MOD_3`."""
 
 
 class OnInputHandler(Protocol):
@@ -252,6 +256,44 @@ class Console(toga.MultilineTextInput):
     @on_input.setter
     def on_input(self, handler: OnInputHandler | None) -> None:
         self._on_input = wrapped_handler(self, handler)
+
+    # Typing
+
+    def type(self, text: str) -> None:
+        """Type `text` at the caret, as the user would.
+
+        The text goes through the native view's own handling of typing, so a line
+        break enters the line, and text typed with the caret in the output goes
+        at the end of the input.
+        """
+        self._impl.type(text)
+
+    def press(self, key: Key | str) -> None:
+        """Press a key, as the user would.
+
+        :param key: `Key.ENTER`, `Key.BACKSPACE`, or Ctrl-C or Ctrl-D, which
+            are `CONTROL + Key.C` and `CONTROL + Key.D`. `CONTROL` is
+            `Key.MOD_1`, except on macOS and iOS, where `MOD_1` is Command and
+            Control is `Key.MOD_3`.
+        :raises ValueError: For any other key.
+        """
+        name = key.value if isinstance(key, Key) else key
+        if name == Key.ENTER.value:
+            self._impl.enter()
+        elif name == Key.BACKSPACE.value:
+            self._impl.backspace()
+        elif name in {CONTROL + Key.C, CONTROL + Key.D}:
+            self._impl.control(name[-1])
+        else:
+            raise ValueError(f"a console cannot press {key!r}")
+
+    def caret_to(self, index: int) -> None:
+        """Move the caret to `index` in the text :meth:`text` returns."""
+        self._impl.caret_to(index)
+
+    def text(self) -> str:
+        """The text the view shows: the output, then the line being typed."""
+        return self._impl.get_text()
 
     # Internals
 

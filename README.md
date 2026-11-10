@@ -52,6 +52,10 @@ Anything running on the event loop can also call `console.write(data, stream="st
 | `attach(source, *, stream="stdout")` | Read a source until it ends: an `asyncio.StreamReader`, an async iterable of bytes or text, a file-like object with `fileno()`, or a file descriptor. Returns an `Attachment`. A regular file is read to its current end. On Android, descriptors are read on a helper thread so end-of-file arrives. On Windows, a descriptor must be a pipe or a regular file, and a pipe is read on a helper thread, because Toga's Windows event loop cannot watch a descriptor; `cancel` leaves whatever arrives later in the pipe. Everywhere else the descriptor is switched to non-blocking for good. The widget never closes a descriptor it was given. |
 | `clear()` | Empty the scrollback and the display at once. |
 | `flush()` | Apply pending output to the display now instead of after the 50 ms interval. |
+| `type(text)` | Type text at the caret, as the user would, through the native view's own handling of typing: a line break enters the line. |
+| `press(key)` | Press a key, as the user would: `Key.ENTER`, `Key.BACKSPACE`, or Ctrl-C or Ctrl-D, `CONTROL + Key.C` and `CONTROL + Key.D`, with `CONTROL` from `toga_console.console`: `Key.MOD_3` on macOS and iOS, where `Key.MOD_1` is Command, and `Key.MOD_1` elsewhere. Any other key raises `ValueError`. |
+| `caret_to(index)` | Move the caret to `index` in `text()`. |
+| `text()` | The text the view shows: the output, then the line being typed. |
 | `value` | The scrollback text. Assigning clears, then writes the text on `stdout`. |
 | `max_lines` | Committed lines kept; assigning trims at once. |
 | `follow` | Scroll to the newest output after each update. |

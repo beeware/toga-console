@@ -75,7 +75,7 @@ class TogaConsoleTextView(TogaMultilineTextView):
 
     @objc_method
     def consoleControl_(self, command) -> None:
-        self.impl.control(CONTROL_KEYS[str(command.input)])
+        self.impl.send_control(CONTROL_KEYS[str(command.input)])
 
 
 class Console(TextKitConsole, MultilineTextInput):
@@ -135,6 +135,37 @@ class Console(TextKitConsole, MultilineTextInput):
     @property
     def text_view(self):
         return self.native
+
+    # Typing, as the user would. UIKit asks the delegate before it lets a key
+    # change the text, but a programmatic insertText or deleteBackward does not,
+    # so these ask it the same way.
+
+    def type(self, text):
+        selection = self.native.selectedRange
+        if self._allowed(selection.location, selection.length, text):
+            self.native.insertText(text)
+
+    def enter(self):
+        self.type("\n")  # what Return sends
+
+    def backspace(self):
+        selection = self.native.selectedRange
+        location, length = selection.location, selection.length
+        if not length:
+            location, length = location - 1, 1
+        if location >= 0 and self._allowed(location, length, ""):
+            self.native.deleteBackward()
+
+    def control(self, key):
+        # A hardware keyboard's chord runs the key command the view offers for it.
+        for command in self.native.keyCommands:
+            if str(command.input) == key:
+                self.native.performSelector(command.action, withObject=command)
+
+    def _allowed(self, location, length, text):
+        return self.native.textView_shouldChangeTextInRange_replacementText_(
+            self.native, NSRange(location, length), text
+        )
 
     # Inherited methods that must keep the base style and the placeholder in sync
 

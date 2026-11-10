@@ -2,16 +2,17 @@ import sys
 import weakref
 from contextlib import suppress
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QEvent, Qt
 from PySide6.QtGui import (
     QFont,
+    QKeyEvent,
     QKeySequence,
     QPalette,
     QTextCharFormat,
     QTextCursor,
     QTextOption,
 )
-from PySide6.QtWidgets import QPlainTextEdit
+from PySide6.QtWidgets import QApplication, QPlainTextEdit
 from toga_qt.colors import native_color
 from toga_qt.widgets.multilinetextinput import MultilineTextInput
 
@@ -160,6 +161,37 @@ class Console(MultilineTextInput):
         cursor.setPosition(self.output_length, QTextCursor.MoveMode.KeepAnchor)
         cursor.removeSelectedText()
         self.output_length = 0
+
+    # Typing, as the user would
+
+    def type(self, text):
+        for char in text:
+            self._press(0, char)
+
+    def enter(self):
+        self._press(Qt.Key.Key_Return, "\r")
+
+    def backspace(self):
+        self._press(Qt.Key.Key_Backspace, "\b")
+
+    def caret_to(self, index):
+        cursor = self.native.textCursor()
+        cursor.setPosition(utf16_length(self.get_text()[:index]))
+        self.native.setTextCursor(cursor)
+
+    def control(self, key):
+        self._press(
+            {"c": Qt.Key.Key_C, "d": Qt.Key.Key_D}[key],
+            chr(ord(key) - ord("a") + 1),
+            CONTROL,
+        )
+
+    def get_text(self):
+        return self._text(0, self._end())
+
+    def _press(self, key, text, modifiers=Qt.KeyboardModifier.NoModifier):
+        for kind in (QEvent.Type.KeyPress, QEvent.Type.KeyRelease):
+            QApplication.sendEvent(self.native, QKeyEvent(kind, key, modifiers, text))
 
     # Typing
 

@@ -134,6 +134,33 @@ class Console(MultilineTextInput):
             self.buffer.delete(self.buffer.get_start_iter(), self._output_iter())
         self._update_placeholder()
 
+    # Typing, as the user would
+
+    def type(self, text):
+        # The key binding signal that typing and pasting use.
+        self.native_textview.emit("insert-at-cursor", text)
+
+    def enter(self):
+        self.type("\n")  # what Return inserts
+
+    def backspace(self):
+        self.native_textview.emit("backspace")
+
+    def caret_to(self, index):
+        # Buffer offsets count characters, as Python does.
+        self.buffer.place_cursor(self.buffer.get_iter_at_offset(index))
+
+    def control(self, key):
+        event = Gdk.Event.new(Gdk.EventType.KEY_PRESS)
+        event.key.keyval = Gdk.keyval_from_name(key)
+        event.key.state = Gdk.ModifierType.CONTROL_MASK
+        event.key.window = self.native_textview.get_window(Gtk.TextWindowType.TEXT)
+        self.native_textview.event(event)
+
+    def get_text(self):
+        start, end = self.buffer.get_bounds()
+        return self.buffer.get_text(start, end, True)
+
     # Typing
 
     def gtk_insert_text(self, buffer, location, text, length):

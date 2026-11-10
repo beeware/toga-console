@@ -2,6 +2,7 @@ import weakref
 from contextlib import contextmanager
 
 from android.graphics import Typeface
+from android.os import SystemClock
 from android.text import (
     InputFilter,
     InputType,
@@ -273,6 +274,42 @@ class Console(MultilineTextInput):
             yield
         finally:
             self.editing_output = False
+
+    # Typing, as the user would
+
+    def type(self, text):
+        # What an input method's commitText does: replace the selection.
+        editable = self.native.getText()
+        start = Selection.getSelectionStart(editable)
+        end = Selection.getSelectionEnd(editable)
+        if start < 0:
+            start = end = editable.length()
+        editable.replace(min(start, end), max(start, end), text)
+
+    def enter(self):
+        self._press(KeyEvent.KEYCODE_ENTER)
+
+    def backspace(self):
+        self._press(KeyEvent.KEYCODE_DEL)
+
+    def caret_to(self, index):
+        self.native.setSelection(utf16_length(self.get_text()[:index]))
+
+    def control(self, key):
+        self._press(
+            {"c": KeyEvent.KEYCODE_C, "d": KeyEvent.KEYCODE_D}[key],
+            KeyEvent.META_CTRL_ON | KeyEvent.META_CTRL_LEFT_ON,
+        )
+
+    def get_text(self):
+        return str(self.native.getText())
+
+    def _press(self, key_code, meta_state=0):
+        now = SystemClock.uptimeMillis()
+        for action in (KeyEvent.ACTION_DOWN, KeyEvent.ACTION_UP):
+            self.native.dispatchKeyEvent(
+                KeyEvent(now, now, action, key_code, 0, meta_state)
+            )
 
     # Selection and styles
 
